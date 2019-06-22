@@ -23,7 +23,6 @@
 #include <WiFiSSLClient.h>
 #include <WiFiUdp.h>
 #include "esp_wpa2.h"
-#include "azureiothub.h"
 
 #include "CommandHandler.h"
 
@@ -984,7 +983,11 @@ int postMessage(const uint8_t command[], uint8_t response[])
   memset(msg, 0x00, sizeof(msg));
   memcpy(msg, &command[4], command[3]);
 
+#ifdef COMMAND_AZURE_IOT_HUB
   uint8_t result = azureiothub::post_message(msg);
+#else
+  uint8_t result = 1;
+#endif
 
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length

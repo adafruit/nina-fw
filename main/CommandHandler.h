@@ -22,6 +22,12 @@
 
 #include <stdint.h>
 
+#define COMMAND_AZURE_IOT_HUB
+
+#ifdef COMMAND_AZURE_IOT_HUB
+#include "azureiothub.h"
+#endif
+
 class CommandHandlerClass {
 public:
   CommandHandlerClass();
