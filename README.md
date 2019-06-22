@@ -20,6 +20,12 @@ original Arduino firmware repository.
 1. Use appropriate tools (esptool.py, appropriate pass-through firmware etc)
    to load this binary file onto your board.
 
+## Azure Iot Hub
+
+1. Clone the https://github.com/espressif/esp-azure repo one level higher in your directory structure. Make sure to clone submodules.
+1. Uncomment the ``#define COMMAND_AZURE_IOT_HUB`` in ``CommandHandler.h``
+1. Build again
+
 ## License
 
 Copyright (c) 2018 Arduino SA. All rights reserved.

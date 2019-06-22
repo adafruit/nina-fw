@@ -35,10 +35,10 @@ namespace azureiothub {
 /*String containing Hostname, Device Id & Device Key in the format:                         */
 /*  "HostName=<host_name>;DeviceId=<device_id>;SharedAccessKey=<device_key>"                */
 /*  "HostName=<host_name>;DeviceId=<device_id>;SharedAccessSignature=<device_sas_token>"    */
-static const char* connectionString = "...";
+static const char* connectionString = CONFIG_IOTHUB_CONNECTION_STRING;
 static IOTHUB_CLIENT_LL_HANDLE iotHubClientHandle = NULL;
 static int receiveContext = 0;
-static uint nextMessageTrackingId = 0;
+static size_t nextMessageTrackingId = 0;
 
 typedef struct EVENT_INSTANCE_TAG
 {
