@@ -979,21 +979,30 @@ int setAnalogWrite(const uint8_t command[], uint8_t response[])
 
 int postMessage(const uint8_t command[], uint8_t response[])
 {
-  char msg[1024]; // TODO: MAX message size?
+  char msg[SPI_BUFFER_LEN]; // TODO: MAX message size?
   memset(msg, 0x00, sizeof(msg));
   memcpy(msg, &command[4], command[3]);
 
+  uint8_t result;
+  size_t messageTrackingId;
+
 #ifdef COMMAND_AZURE_IOT_HUB
-  uint8_t result = azureiothub::post_message(msg);
+  result = azureiothub::post_message(msg, messageTrackingId);
 #else
-  uint8_t result = 1;
+  result = 1;
+  messageTrackingId = 0;
 #endif
 
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length
   response[4] = result;
+  response[5] = 4; // parameter 2 length
+  response[6] = (messageTrackingId >> 24) & 0xff;
+  response[7] = (messageTrackingId >> 16) & 0xff;
+  response[8] = (messageTrackingId >> 8) & 0xff;
+  response[9] = (messageTrackingId) & 0xff;
 
-  return 6;
+  return 10;
 }
 
 int wpa2EntSetIdentity(const uint8_t command[], uint8_t response[]) {

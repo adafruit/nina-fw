@@ -21,6 +21,8 @@
 #define COMMAND_HANDLER_H
 
 #include <stdint.h>
+#include <SPIS.h>
+#define SPI_BUFFER_LEN SPI_MAX_DMA_LEN
 
 #define COMMAND_AZURE_IOT_HUB
 

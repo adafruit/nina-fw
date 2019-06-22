@@ -21,7 +21,6 @@
 #include "azureiothub.h"
 
 #define CONFIG_IOTHUB_CONNECTION_STRING "TODO"
-#define CONFIG_MESSAGE_COUNT 3
 
 #ifdef MBED_BUILD_TIMESTAMP
     #define SET_TRUSTED_CERT_IN_SAMPLES
@@ -83,6 +82,12 @@ static void SendConfirmationCallback(IOTHUB_CLIENT_CONFIRMATION_RESULT result, v
     EVENT_INSTANCE* eventInstance = (EVENT_INSTANCE*)userContextCallback;
     size_t id = eventInstance->messageTrackingId;
 
+/*
+    IOTHUB_CLIENT_CONFIRMATION_OK
+    IOTHUB_CLIENT_CONFIRMATION_BECAUSE_DESTROY
+    IOTHUB_CLIENT_CONFIRMATION_MESSAGE_TIMEOUT
+    IOTHUB_CLIENT_CONFIRMATION_ERROR
+ */
     if (result == IOTHUB_CLIENT_CONFIRMATION_OK) {
         (void)printf("Confirmation received for message tracking id = %d with result = %s\r\n", (int)id, ENUM_TO_STRING(IOTHUB_CLIENT_CONFIRMATION_RESULT, result));
         /* Some device specific action code goes here... */
@@ -144,9 +149,10 @@ uint8_t do_work() {
     return 0;
 }
 
-uint8_t post_message(const char* msgText) 
+uint8_t post_message(const char* msgText, size_t& messageTrackingId) 
 {
     EVENT_INSTANCE message;
+    messageTrackingId = 0;
     message.messageHandle = IoTHubMessage_CreateFromByteArray((const unsigned char*)msgText, strlen(msgText));
     if (message.messageHandle == NULL)
     {
@@ -161,6 +167,8 @@ uint8_t post_message(const char* msgText)
         return 5;
     }
     (void)printf("IoTHubClient_LL_SendEventAsync accepted message [%d] for transmission to IoT Hub.\r\n", message.messageTrackingId);
+
+    messageTrackingId = message.messageTrackingId;
     return 0;
 }
 
