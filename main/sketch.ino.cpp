@@ -102,7 +102,7 @@ void setup() {
 
     setupWiFi();
   }
-  azureiot::init();
+  azureiothub::init();
 }
 
 #define UNO_WIFI_REV2
@@ -159,7 +159,7 @@ void setupWiFi() {
 void loop() {
   if (debug)  ets_printf(".");
   // process azure iot
-  azureiot::do_work();
+  azureiothub::do_work();
   // wait for a command
   memset(commandBuffer, 0x00, SPI_BUFFER_LEN);
   int commandLength = SPIS.transfer(NULL, commandBuffer, SPI_BUFFER_LEN);
