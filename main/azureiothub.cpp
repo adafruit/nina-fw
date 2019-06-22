@@ -38,6 +38,7 @@ namespace azureiothub {
 /*  "HostName=<host_name>;DeviceId=<device_id>;SharedAccessSignature=<device_sas_token>"    */
 static const char* connectionString = "...";
 static IOTHUB_CLIENT_LL_HANDLE iotHubClientHandle = NULL;
+static int receiveContext = 0;
 static uint nextMessageTrackingId = 0;
 
 typedef struct EVENT_INSTANCE_TAG
@@ -96,8 +97,13 @@ void connection_status_callback(IOTHUB_CLIENT_CONNECTION_STATUS result, IOTHUB_C
                  ENUM_TO_STRING(IOTHUB_CLIENT_CONNECTION_STATUS_REASON, reason));
 }
 
-int init(void)
+uint8_t init(void)
 {
+    if (receiveContext != 0) {
+        // already initialized
+        return 0;
+    }
+
     int res = platform_init();
     if (res != 0)
     {
@@ -122,7 +128,6 @@ int init(void)
 #endif // SET_TRUSTED_CERT_IN_SAMPLES
 
     /* Setting Message call back, so we can receive Commands. */
-    int receiveContext = 0;
     if (IoTHubClient_LL_SetMessageCallback(iotHubClientHandle, ReceiveMessageCallback, &receiveContext) != IOTHUB_CLIENT_OK)
     {
         (void)printf("ERROR: IoTHubClient_LL_SetMessageCallback..........FAILED!\r\n");
@@ -131,16 +136,15 @@ int init(void)
 
     (void)printf("IoTHubClient_LL_SetMessageCallback...successful.\r\n");
 
-    do
-    {
-        IoTHubClient_LL_DoWork(iotHubClientHandle);
-        ThreadAPI_Sleep(10);
-
-    } while (true);
     return 0;
 }
 
-int post_message(const char* msgText) 
+uint8_t do_work() {
+    IoTHubClient_LL_DoWork(iotHubClientHandle);
+    return 0;
+}
+
+uint8_t post_message(const char* msgText) 
 {
     EVENT_INSTANCE message;
     message.messageHandle = IoTHubMessage_CreateFromByteArray((const unsigned char*)msgText, strlen(msgText));

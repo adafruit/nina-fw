@@ -31,6 +31,7 @@ extern "C" {
 #include <WiFi.h>
 
 #include "CommandHandler.h"
+#include "azureiothub.h"
 
 #define SPI_BUFFER_LEN SPI_MAX_DMA_LEN
 
@@ -101,6 +102,7 @@ void setup() {
 
     setupWiFi();
   }
+  azureiot::init();
 }
 
 #define UNO_WIFI_REV2
@@ -156,6 +158,8 @@ void setupWiFi() {
 
 void loop() {
   if (debug)  ets_printf(".");
+  // process azure iot
+  azureiot::do_work();
   // wait for a command
   memset(commandBuffer, 0x00, SPI_BUFFER_LEN);
   int commandLength = SPIS.transfer(NULL, commandBuffer, SPI_BUFFER_LEN);

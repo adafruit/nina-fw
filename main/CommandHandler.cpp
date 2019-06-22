@@ -980,25 +980,18 @@ int setAnalogWrite(const uint8_t command[], uint8_t response[])
 
 int postMessage(const uint8_t command[], uint8_t response[])
 {
+  char msg[1024]; // TODO: MAX message size?
+  memset(msg, 0x00, sizeof(msg));
+  memcpy(msg, &command[4], command[3]);
 
-  return 7;
-}
-
-int getMessage(const uint8_t command[], uint8_t response[])
-{
-  // pop a message pending
-  // TODO: query azure
-  const char* msg = NULL;
-  uint8_t msgLen = strlen(msg);
+  uint8_t result = azureiot::post_message(msg);
 
   response[2] = 1; // number of parameters
-  response[3] = msgLen; // parameter 1 length
+  response[3] = 1; // parameter 1 length
+  response[4] = result;
 
-  memcpy(&response[4], msg, msgLen);
-
-  return (5 + msgLen);
+  return 6;
 }
-
 
 int wpa2EntSetIdentity(const uint8_t command[], uint8_t response[]) {
   char identity[32 + 1];
