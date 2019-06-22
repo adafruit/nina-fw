@@ -23,10 +23,11 @@
 #include <WiFiSSLClient.h>
 #include <WiFiUdp.h>
 #include "esp_wpa2.h"
+#include "azureiothub.h"
 
 #include "CommandHandler.h"
 
-const char FIRMWARE_VERSION[6] = "1.3.1";
+const char FIRMWARE_VERSION[6] = "1.4.0";
 
 /*IPAddress*/uint32_t resolvedHostname;
 
@@ -979,27 +980,6 @@ int setAnalogWrite(const uint8_t command[], uint8_t response[])
 
 int postMessage(const uint8_t command[], uint8_t response[])
 {
-  uint8_t socket;
-  uint16_t length;
-  uint16_t written = 0;
-
-  socket = command[5];
-  memcpy(&length, &command[6], sizeof(length));
-  length = ntohs(length);
-
-  /** TODO send to Azure
-  if ((socketTypes[socket] == 0x00) && tcpServers[socket]) {
-    written = tcpServers[socket].write(&command[8], length);
-  } else if (socketTypes[socket] == 0x00) {
-    written = tcpClients[socket].write(&command[8], length);
-  } else if (socketTypes[socket] == 0x02) {
-    written = tlsClients[socket].write(&command[8], length);
-  }
-  */
-
-  response[2] = 1; // number of parameters
-  response[3] = sizeof(written); // parameter 1 length
-  memcpy(&response[4], &written, sizeof(written));
 
   return 7;
 }
@@ -1111,7 +1091,7 @@ const CommandHandlerType commandHandlers[] = {
   setPinMode, setDigitalWrite, setAnalogWrite, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
 
   // 0x60 -> 0x06f: pub/sub of cloud message (backend agnostic)
-  postMessage, getMessage
+  postMessage
 };
 
 #define NUM_COMMAND_HANDLERS (sizeof(commandHandlers) / sizeof(commandHandlers[0]))
