@@ -977,6 +977,49 @@ int setAnalogWrite(const uint8_t command[], uint8_t response[])
   return 6;
 }
 
+int postMessage(const uint8_t command[], uint8_t response[])
+{
+  uint8_t socket;
+  uint16_t length;
+  uint16_t written = 0;
+
+  socket = command[5];
+  memcpy(&length, &command[6], sizeof(length));
+  length = ntohs(length);
+
+  /** TODO send to Azure
+  if ((socketTypes[socket] == 0x00) && tcpServers[socket]) {
+    written = tcpServers[socket].write(&command[8], length);
+  } else if (socketTypes[socket] == 0x00) {
+    written = tcpClients[socket].write(&command[8], length);
+  } else if (socketTypes[socket] == 0x02) {
+    written = tlsClients[socket].write(&command[8], length);
+  }
+  */
+
+  response[2] = 1; // number of parameters
+  response[3] = sizeof(written); // parameter 1 length
+  memcpy(&response[4], &written, sizeof(written));
+
+  return 7;
+}
+
+int getMessage(const uint8_t command[], uint8_t response[])
+{
+  // pop a message pending
+  // TODO: query azure
+  const char* msg = NULL;
+  uint8_t msgLen = strlen(msg);
+
+  response[2] = 1; // number of parameters
+  response[3] = msgLen; // parameter 1 length
+
+  memcpy(&response[4], msg, msgLen);
+
+  return (5 + msgLen);
+}
+
+
 int wpa2EntSetIdentity(const uint8_t command[], uint8_t response[]) {
   char identity[32 + 1];
 
@@ -1065,7 +1108,10 @@ const CommandHandlerType commandHandlers[] = {
   NULL, NULL, NULL, NULL, sendDataTcp, getDataBufTcp, insertDataBuf, NULL, NULL, NULL, wpa2EntSetIdentity, wpa2EntSetUsername, wpa2EntSetPassword, wpa2EntSetCACert, wpa2EntSetCertKey, wpa2EntEnable,
 
   // 0x50 -> 0x5f
-  setPinMode, setDigitalWrite, setAnalogWrite,
+  setPinMode, setDigitalWrite, setAnalogWrite, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+
+  // 0x60 -> 0x06f: pub/sub of cloud message (backend agnostic)
+  postMessage, getMessage
 };
 
 #define NUM_COMMAND_HANDLERS (sizeof(commandHandlers) / sizeof(commandHandlers[0]))
