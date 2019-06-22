@@ -102,7 +102,7 @@ void setup() {
     setupWiFi();
   }
 #ifdef COMMAND_AZURE_IOT_HUB
-  azureiothub::init();
+  azureiothub::init(NULL);
 #endif 
 }
 

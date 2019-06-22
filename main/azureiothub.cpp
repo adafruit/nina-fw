@@ -20,7 +20,6 @@
 
 #include "azureiothub.h"
 
-#define CONFIG_IOTHUB_CONNECTION_STRING "TODO"
 
 #ifdef MBED_BUILD_TIMESTAMP
     #define SET_TRUSTED_CERT_IN_SAMPLES
@@ -35,9 +34,8 @@ namespace azureiothub {
 /*String containing Hostname, Device Id & Device Key in the format:                         */
 /*  "HostName=<host_name>;DeviceId=<device_id>;SharedAccessKey=<device_key>"                */
 /*  "HostName=<host_name>;DeviceId=<device_id>;SharedAccessSignature=<device_sas_token>"    */
-static const char* connectionString = CONFIG_IOTHUB_CONNECTION_STRING;
 static IOTHUB_CLIENT_LL_HANDLE iotHubClientHandle = NULL;
-static int receiveContext = 0;
+static int iotHubReceiveContext = 0;
 static size_t nextMessageTrackingId = 0;
 
 typedef struct EVENT_INSTANCE_TAG
@@ -102,24 +100,34 @@ void connection_status_callback(IOTHUB_CLIENT_CONNECTION_STATUS result, IOTHUB_C
                  ENUM_TO_STRING(IOTHUB_CLIENT_CONNECTION_STATUS_REASON, reason));
 }
 
-uint8_t init(void)
+uint8_t init(const char* connectionString)
 {
-    if (receiveContext != 0) {
+    if (iotHubReceiveContext != 0) {
         // already initialized
         return 0;
+    }
+
+#ifdef CONFIG_IOTHUB_CONNECTION_STRING
+    if (NULL == connectionString) {
+        connectionString = CONFIG_IOTHUB_CONNECTION_STRING;
+    }    
+#endif
+    if (NULL == connectionString) {
+        (void)printf("missing configuration string\r\n");
+        return 1;
     }
 
     int res = platform_init();
     if (res != 0)
     {
         (void)printf("Failed to initialize the platform %d.\r\n", res);
-        return 1;
+        return 2;
     }
 
     if ((iotHubClientHandle = IoTHubClient_LL_CreateFromConnectionString(connectionString, MQTT_Protocol)) == NULL)
     {
         (void)printf("ERROR: iotHubClientHandle is NULL!\r\n");
-        return 2;
+        return 3;
     }
     
     bool traceOn = true;
@@ -133,10 +141,10 @@ uint8_t init(void)
 #endif // SET_TRUSTED_CERT_IN_SAMPLES
 
     /* Setting Message call back, so we can receive Commands. */
-    if (IoTHubClient_LL_SetMessageCallback(iotHubClientHandle, ReceiveMessageCallback, &receiveContext) != IOTHUB_CLIENT_OK)
+    if (IoTHubClient_LL_SetMessageCallback(iotHubClientHandle, ReceiveMessageCallback, &iotHubReceiveContext) != IOTHUB_CLIENT_OK)
     {
         (void)printf("ERROR: IoTHubClient_LL_SetMessageCallback..........FAILED!\r\n");
-        return 3;
+        return 4;
     }
 
     (void)printf("IoTHubClient_LL_SetMessageCallback...successful.\r\n");
@@ -145,6 +153,11 @@ uint8_t init(void)
 }
 
 uint8_t do_work() {
+    if (iotHubReceiveContext == 0) {
+        // not initialized yet
+        return 0;
+    }
+
     IoTHubClient_LL_DoWork(iotHubClientHandle);
     return 0;
 }

@@ -977,6 +977,26 @@ int setAnalogWrite(const uint8_t command[], uint8_t response[])
   return 6;
 }
 
+int setMessageToken(const uint8_t command[], uint8_t response[])
+{
+  char token[SPI_BUFFER_LEN]; // TODO: MAX message size?
+  memset(token, 0x00, sizeof(token));
+  memcpy(token, &command[4], command[3]);
+
+  uint8_t result;
+#ifdef COMMAND_AZURE_IOT_HUB
+  result = azureiothub::init(token);
+#else
+  result = 0;
+#endif
+
+  response[2] = 1; // number of parameters
+  response[3] = 1; // parameter 1 length
+  response[4] = result;
+
+  return 6;
+}
+
 int postMessage(const uint8_t command[], uint8_t response[])
 {
   char msg[SPI_BUFFER_LEN]; // TODO: MAX message size?
@@ -993,7 +1013,7 @@ int postMessage(const uint8_t command[], uint8_t response[])
   messageTrackingId = 0;
 #endif
 
-  response[2] = 1; // number of parameters
+  response[2] = 2; // number of parameters
   response[3] = 1; // parameter 1 length
   response[4] = result;
   response[5] = 4; // parameter 2 length
@@ -1096,7 +1116,7 @@ const CommandHandlerType commandHandlers[] = {
   setPinMode, setDigitalWrite, setAnalogWrite, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
 
   // 0x60 -> 0x06f: pub/sub of cloud message (backend agnostic)
-  postMessage
+  setMessageToken, postMessage
 };
 
 #define NUM_COMMAND_HANDLERS (sizeof(commandHandlers) / sizeof(commandHandlers[0]))
