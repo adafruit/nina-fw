@@ -100,6 +100,15 @@ void connection_status_callback(IOTHUB_CLIENT_CONNECTION_STATUS result, IOTHUB_C
                  ENUM_TO_STRING(IOTHUB_CLIENT_CONNECTION_STATUS_REASON, reason));
 }
 
+void do_work(void *pvParameter) 
+{
+    while(1) {
+        IoTHubClient_LL_DoWork(iotHubClientHandle);
+        ThreadAPI_Sleep(10);
+    }
+    //vTaskDelete(NULL);
+}
+
 uint8_t init(const char* connectionString)
 {
     if (iotHubReceiveContext != 0) {
@@ -149,16 +158,12 @@ uint8_t init(const char* connectionString)
 
     (void)printf("IoTHubClient_LL_SetMessageCallback...successful.\r\n");
 
-    return 0;
-}
-
-uint8_t do_work() {
-    if (iotHubReceiveContext == 0) {
-        // not initialized yet
-        return 0;
+    // start the worker thread
+    if ( xTaskCreate(&do_work, "azure_task", 1024 * 5, NULL, 5, NULL) != pdPASS ) {
+        printf("create azure task failed\r\n");
+        return 5;
     }
 
-    IoTHubClient_LL_DoWork(iotHubClientHandle);
     return 0;
 }
 

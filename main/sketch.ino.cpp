@@ -156,9 +156,6 @@ void setupWiFi() {
 
 void loop() {
   if (debug)  ets_printf(".");
-#ifdef COMMAND_AZURE_IOT_HUB
-  azureiothub::do_work();
-#endif
   // wait for a command
   memset(commandBuffer, 0x00, SPI_BUFFER_LEN);
   int commandLength = SPIS.transfer(NULL, commandBuffer, SPI_BUFFER_LEN);
