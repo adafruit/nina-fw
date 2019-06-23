@@ -1025,6 +1025,27 @@ int postMessage(const uint8_t command[], uint8_t response[])
   return 10;
 }
 
+int messageConnectionStatus(const uint8_t command[], uint8_t response[]) {  
+
+  uint8_t status;
+  uint8_t reason;
+#ifdef COMMAND_AZURE_IOT_HUB
+  status = azureiothub::connectionStatus();
+  reason = azureiothub::connectionStatusReason();
+#else
+  status = 0;
+  reason = 0;
+#endif
+
+  response[2] = 2; // number of parameters
+  response[3] = 1; // parameter 1 length
+  response[4] = status;
+  response[5] = 1; // parameter 2 length
+  response[6] = reason;
+
+  return 7;
+}
+
 int wpa2EntSetIdentity(const uint8_t command[], uint8_t response[]) {
   char identity[32 + 1];
 
@@ -1116,7 +1137,7 @@ const CommandHandlerType commandHandlers[] = {
   setPinMode, setDigitalWrite, setAnalogWrite, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
 
   // 0x60 -> 0x06f: pub/sub of cloud message (backend agnostic)
-  setMessageToken, postMessage
+  setMessageToken, postMessage, messageConnectionStatus
 };
 
 #define NUM_COMMAND_HANDLERS (sizeof(commandHandlers) / sizeof(commandHandlers[0]))

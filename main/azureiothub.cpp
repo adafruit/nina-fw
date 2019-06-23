@@ -37,6 +37,8 @@ namespace azureiothub {
 static IOTHUB_CLIENT_LL_HANDLE iotHubClientHandle = NULL;
 static int iotHubReceiveContext = 0;
 static size_t nextMessageTrackingId = 0;
+static IOTHUB_CLIENT_CONNECTION_STATUS _connectionStatus = IOTHUB_CLIENT_CONNECTION_UNAUTHENTICATED;
+static IOTHUB_CLIENT_CONNECTION_STATUS_REASON _connectionStatusReason = IOTHUB_CLIENT_CONNECTION_NO_NETWORK;
 
 typedef struct EVENT_INSTANCE_TAG
 {
@@ -98,6 +100,16 @@ void connection_status_callback(IOTHUB_CLIENT_CONNECTION_STATUS result, IOTHUB_C
 {
     (void)printf("\n\nConnection Status result:%s, Connection Status reason: %s\n\n", ENUM_TO_STRING(IOTHUB_CLIENT_CONNECTION_STATUS, result),
                  ENUM_TO_STRING(IOTHUB_CLIENT_CONNECTION_STATUS_REASON, reason));
+    _connectionStatus = result;
+    _connectionStatusReason = reason;
+}
+
+uint8_t connectionStatus() {
+    return _connectionStatus;
+}
+
+uint8_t connectionStatusReason() {
+    return _connectionStatusReason;
 }
 
 void do_work(void *pvParameter) 
