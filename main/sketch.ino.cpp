@@ -101,9 +101,6 @@ void setup() {
 
     setupWiFi();
   }
-#ifdef COMMAND_AZURE_IOT_HUB
-  azureiothub::init(NULL);
-#endif 
 }
 
 #define UNO_WIFI_REV2
