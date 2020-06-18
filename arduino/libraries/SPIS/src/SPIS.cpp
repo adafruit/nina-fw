@@ -26,6 +26,8 @@
 #include "WInterrupts.h"
 
 #include "SPIS.h"
+#include "pinning.h"
+
 
 SPISClass::SPISClass(spi_host_device_t hostDevice, int dmaChannel, int mosiPin, int misoPin, int sclkPin, int csPin, int readyPin) :
   _hostDevice(hostDevice),
@@ -113,4 +115,5 @@ void SPISClass::handleSetupComplete()
   xSemaphoreGiveFromISR(_readySemaphore, NULL);
 }
 
-SPISClass SPIS(VSPI_HOST, 1, 14, 23, 18, 5, 33);
+SPISClass SPIS(VSPI_HOST, VSPI_DMACHANNEL, VSPI_MOSI, VSPI_MISO, VSPI_SCLK, VSPI_SS, VSPI_READY);
+

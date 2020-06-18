@@ -31,6 +31,7 @@ extern "C" {
 #include <WiFi.h>
 
 #include "CommandHandler.h"
+#include "pinning.h"
 
 #define SPI_BUFFER_LEN SPI_MAX_DMA_LEN
 
@@ -87,16 +88,21 @@ void setupBluetooth();
 void setup() {
   setDebug(debug);
 
+#ifdef SWD_SAMD
   // put SWD and SWCLK pins connected to SAMD as inputs
-  pinMode(15, INPUT);
-  pinMode(21, INPUT);
-
-  pinMode(5, INPUT);
-  if (digitalRead(5) == LOW) {
+  pinMode(SWD_SAMD, INPUT);
+  pinMode(SWCLK_SAMD, INPUT);
+#endif
+  
+#ifdef BT_MODE_SENSE
+  pinMode(BT_MODE_SENSE, INPUT);
+  if (digitalRead(BT_MODE_SENSE) == LOW) {
     if (debug)  ets_printf("*** BLUETOOTH ON\n");
 
     setupBluetooth();
-  } else {
+  } else
+#endif
+    {
     if (debug)  ets_printf("*** WIFI ON\n");
 
     setupWiFi();
@@ -109,21 +115,13 @@ void setupBluetooth() {
   periph_module_enable(PERIPH_UART1_MODULE);
   periph_module_enable(PERIPH_UHCI0_MODULE);
 
-#ifdef UNO_WIFI_REV2
-  uart_set_pin(UART_NUM_1, 1, 3, 33, 0); // TX, RX, RTS, CTS
-#else
-  uart_set_pin(UART_NUM_1, 23, 12, 18, 5);
-#endif
-  uart_set_hw_flow_ctrl(UART_NUM_1, UART_HW_FLOWCTRL_CTS_RTS, 5);
+  uart_set_pin(UART_NUM_1, UART1_TX, UART1_RX, UART1_RTS, UART1_CTS);
+  uart_set_hw_flow_ctrl(UART_NUM_1, UART_HW_FLOWCTRL_CTS_RTS, UART1_CTS);
 
   esp_bt_controller_config_t btControllerConfig = BT_CONTROLLER_INIT_CONFIG_DEFAULT(); 
 
   btControllerConfig.hci_uart_no = UART_NUM_1;
-#ifdef UNO_WIFI_REV2
-  btControllerConfig.hci_uart_baudrate = 115200;
-#else
-  btControllerConfig.hci_uart_baudrate = 912600;
-#endif
+  btControllerConfig.hci_uart_baudrate = UART1_BAUD;
 
   esp_bt_controller_init(&btControllerConfig);
   while (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_IDLE);

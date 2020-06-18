@@ -12,6 +12,11 @@ CIRCUITPYTHON_UF2 := circuitpython.uf2
 
 EXTRA_COMPONENT_DIRS := $(PWD)/arduino
 
+# To use the new pinning, uncomment this line
+# CPPFLAGS +=-DOPTIMISED_PINNING
+
+CPPFLAGS +=-I$(PWD)
+
 ifeq ($(RELEASE),1)
 CFLAGS += -DNDEBUG -DCONFIG_FREERTOS_ASSERT_DISABLE -Os -DLOG_LOCAL_LEVEL=0
 CPPFLAGS += -DNDEBUG -Os
