@@ -438,14 +438,17 @@ int availDataTcp(const uint8_t command[], uint8_t response[])
 {
   uint8_t socket = command[4];
   uint16_t available = 0;
-
+  ets_printf("Handling availDataTcp");
   if (socketTypes[socket] == 0x00) {
+    ets_printf("Socket type is 0");
     if (tcpServers[socket]) {
+      ets_printf("Socket is a tcpServer");
       WiFiClient client = tcpServers[socket].available();
 
       available = 255;
 
       if (client) {
+        ets_printf("Client is available on server socket - finding a slot ");
         // try to find existing socket slot
         for (int i = 0; i < MAX_SOCKETS; i++) {
           if (i == socket) {
@@ -477,6 +480,7 @@ int availDataTcp(const uint8_t command[], uint8_t response[])
         }
       }
     } else {
+      ets_printf("Looking in clients list for the socket");
       available = tcpClients[socket].available();
     }
   } else if (socketTypes[socket] == 0x01) {
@@ -491,7 +495,7 @@ int availDataTcp(const uint8_t command[], uint8_t response[])
 
   response[2] = 1; // number of parameters
   response[3] = sizeof(available); // parameter 1 length
-
+  ets_printf("Copying data about available data.");
   memcpy(&response[4], &available, sizeof(available));
 
   return 7;
