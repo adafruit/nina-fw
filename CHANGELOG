@@ -1,3 +1,8 @@
+Adafruit's Arduino NINA-W102 firmware 2.0.0alpha - 2023.06.23
+
+* Updated build environment to ESP-IDF 4.4.0
+* Fixed support for joining WPA2 Enterprise networks, testing on eduroam
+
 Adafruit's Arduino NINA-W102 firmware 1.7.4 - 2021.06.03
 
 * Fixed support for custom hostname in WiFi client mode

@@ -3,7 +3,7 @@
 import sys;
 
 booloaderData = open("build/bootloader/bootloader.bin", "rb").read()
-partitionData = open("build/partitions.bin", "rb").read()
+partitionData = open("build/partition_table/partition-table.bin", "rb").read()
 appData = open("build/nina-fw.bin", "rb").read()
 certsData = open("data/roots.pem", "rb").read()
 
@@ -31,7 +31,7 @@ for i in range(0, len(certsData)):
 # zero terminate the pem file
 outputData[0x10000 + len(certsData)] = 0
 
-outputFilename = "NINA_W102-1.7.4.bin"
+outputFilename = "NINA_W102-2.0.0alpha.bin"
 if (len(sys.argv) > 1):
 	outputFilename = sys.argv[1]
 

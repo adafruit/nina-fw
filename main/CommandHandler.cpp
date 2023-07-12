@@ -22,13 +22,14 @@
 #include <WiFiServer.h>
 #include <WiFiSSLClient.h>
 #include <WiFiUdp.h>
-#include "esp_wpa2.h"
+#include <esp_wpa2.h>
+#include "esp_wifi.h"
 
 #include "CommandHandler.h"
 
 #include "Arduino.h"
 
-const char FIRMWARE_VERSION[6] = "1.7.4";
+const char FIRMWARE_VERSION[] = "2.0.0alpha";
 
 // Optional, user-defined X.509 certificate
 char CERT_BUF[1300];
@@ -757,7 +758,7 @@ int getFwVersion(const uint8_t command[], uint8_t response[])
 
   memcpy(&response[4], FIRMWARE_VERSION, sizeof(FIRMWARE_VERSION));
 
-  return 11;
+  return 4 + sizeof(FIRMWARE_VERSION) + 1;
 }
 
 int sendUDPdata(const uint8_t command[], uint8_t response[])
@@ -1012,7 +1013,8 @@ int setAnalogRead(const uint8_t command[], uint8_t response[])
   uint8_t pin = command[4];
   uint8_t atten = command[6];
 
-  int value = analogRead(pin, atten);
+  analogSetAttenuation((adc_attenuation_t)atten);
+  int value = analogRead(pin);
 
   response[2] = 1; // number of parameters
   response[3] = sizeof(value); // parameter 1 length
@@ -1081,8 +1083,8 @@ int wpa2EntSetCertKey(const uint8_t command[], uint8_t response[]) {
 
 int wpa2EntEnable(const uint8_t command[], uint8_t response[]) {
 
-  esp_wpa2_config_t config = WPA2_CONFIG_INIT_DEFAULT();
-  esp_wifi_sta_wpa2_ent_enable(&config);
+  esp_wifi_set_mode(WIFI_MODE_STA);
+  esp_wifi_sta_wpa2_ent_enable();
 
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length

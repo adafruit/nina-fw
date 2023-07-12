@@ -1,3 +1,5 @@
+# LEGACY MAKEFILE - not used in v2.0.0alpha or newer
+
 PROJECT_NAME := nina-fw
 
 # Passthrough Board Port
@@ -28,7 +30,7 @@ load-passthrough:
 	cp passthrough.UF2  $(BOOT_VOLUME)
 
 load-nina:
-	esptool.py --port $(M4_PORT) --before no_reset --baud $(UPLOAD_BAUD) write_flash 0 NINA_W102-1.7.4.bin
+	esptool.py --port $(M4_PORT) --before no_reset --baud $(UPLOAD_BAUD) write_flash 0 NINA_W102-1.7.5.bin
 
 load-circuitpython:
 	cp $(CIRCUITPYTHON_UF2) $(BOOT_VOLUME)
