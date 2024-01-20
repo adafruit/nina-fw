@@ -1,3 +1,11 @@
+# - /!\ ------------------------------------------------------------------------
+# Due to a limitation of arduino-esp32's build system, we cannot disable various
+# libraries that are unneeded for the nina-fw firmware. As a workaround, this
+# is a copy of the arduino-esp32 CMakeLists.txt with libraries removed.
+#
+# Bug: https://github.com/espressif/arduino-esp32/issues/6788
+# ------------------------------------------------------------------------------
+
 # Check ESP-IDF version and error out if it is not in the supported range.
 #
 # Note for arduino-esp32 developers: to bypass the version check locally,
@@ -26,72 +34,63 @@ if ("${idf_version}" AND NOT "$ENV{ARDUINO_SKIP_IDF_VERSION_CHECK}")
 endif()
 
 set(CORE_SRCS
-  cores/esp32/base64.cpp
-  cores/esp32/cbuf.cpp
-  cores/esp32/esp32-hal-adc.c
-  cores/esp32/esp32-hal-bt.c
-  cores/esp32/esp32-hal-cpu.c
-  cores/esp32/esp32-hal-dac.c
-  cores/esp32/esp32-hal-gpio.c
-  cores/esp32/esp32-hal-i2c.c
-  cores/esp32/esp32-hal-i2c-slave.c
-  cores/esp32/esp32-hal-ledc.c
-  cores/esp32/esp32-hal-matrix.c
-  cores/esp32/esp32-hal-misc.c
-  cores/esp32/esp32-hal-psram.c
-  cores/esp32/esp32-hal-rgb-led.c
-  cores/esp32/esp32-hal-sigmadelta.c
-  cores/esp32/esp32-hal-spi.c
-  cores/esp32/esp32-hal-time.c
-  cores/esp32/esp32-hal-timer.c
-  cores/esp32/esp32-hal-tinyusb.c
-  cores/esp32/esp32-hal-touch.c
-  cores/esp32/esp32-hal-uart.c
-  cores/esp32/esp32-hal-rmt.c
-  cores/esp32/Esp.cpp
-  cores/esp32/FunctionalInterrupt.cpp
-  cores/esp32/HardwareSerial.cpp
-  cores/esp32/IPAddress.cpp
-  cores/esp32/IPv6Address.cpp
-  cores/esp32/libb64/cdecode.c
-  cores/esp32/libb64/cencode.c
-  cores/esp32/main.cpp
-  cores/esp32/MD5Builder.cpp
-  cores/esp32/Print.cpp
-  cores/esp32/stdlib_noniso.c
-  cores/esp32/Stream.cpp
-  cores/esp32/StreamString.cpp
-  cores/esp32/Tone.cpp
-  cores/esp32/HWCDC.cpp
-  cores/esp32/USB.cpp
-  cores/esp32/USBCDC.cpp
-  cores/esp32/USBMSC.cpp
-  cores/esp32/FirmwareMSC.cpp
-  cores/esp32/firmware_msc_fat.c
-  cores/esp32/wiring_pulse.c
-  cores/esp32/wiring_shift.c
-  cores/esp32/WMath.cpp
-  cores/esp32/WString.cpp
+  arduino/cores/esp32/base64.cpp
+  arduino/cores/esp32/cbuf.cpp
+  arduino/cores/esp32/esp32-hal-adc.c
+  arduino/cores/esp32/esp32-hal-bt.c
+  arduino/cores/esp32/esp32-hal-cpu.c
+  arduino/cores/esp32/esp32-hal-dac.c
+  arduino/cores/esp32/esp32-hal-gpio.c
+  arduino/cores/esp32/esp32-hal-i2c.c
+  arduino/cores/esp32/esp32-hal-i2c-slave.c
+  arduino/cores/esp32/esp32-hal-ledc.c
+  arduino/cores/esp32/esp32-hal-matrix.c
+  arduino/cores/esp32/esp32-hal-misc.c
+  arduino/cores/esp32/esp32-hal-psram.c
+  arduino/cores/esp32/esp32-hal-rgb-led.c
+  arduino/cores/esp32/esp32-hal-sigmadelta.c
+  arduino/cores/esp32/esp32-hal-spi.c
+  arduino/cores/esp32/esp32-hal-time.c
+  arduino/cores/esp32/esp32-hal-timer.c
+  arduino/cores/esp32/esp32-hal-tinyusb.c
+  arduino/cores/esp32/esp32-hal-touch.c
+  arduino/cores/esp32/esp32-hal-uart.c
+  arduino/cores/esp32/esp32-hal-rmt.c
+  arduino/cores/esp32/Esp.cpp
+  arduino/cores/esp32/FunctionalInterrupt.cpp
+  arduino/cores/esp32/HardwareSerial.cpp
+  arduino/cores/esp32/IPAddress.cpp
+  arduino/cores/esp32/IPv6Address.cpp
+  arduino/cores/esp32/libb64/cdecode.c
+  arduino/cores/esp32/libb64/cencode.c
+  arduino/cores/esp32/main.cpp
+  arduino/cores/esp32/MD5Builder.cpp
+  arduino/cores/esp32/Print.cpp
+  arduino/cores/esp32/stdlib_noniso.c
+  arduino/cores/esp32/Stream.cpp
+  arduino/cores/esp32/StreamString.cpp
+  arduino/cores/esp32/Tone.cpp
+  arduino/cores/esp32/HWCDC.cpp
+  arduino/cores/esp32/USB.cpp
+  arduino/cores/esp32/USBCDC.cpp
+  arduino/cores/esp32/USBMSC.cpp
+  arduino/cores/esp32/FirmwareMSC.cpp
+  arduino/cores/esp32/firmware_msc_fat.c
+  arduino/cores/esp32/wiring_pulse.c
+  arduino/cores/esp32/wiring_shift.c
+  arduino/cores/esp32/WMath.cpp
+  arduino/cores/esp32/WString.cpp
   )
 
-set(LIBRARY_SRCS
-  libraries/SPIS/src/SPIS.cpp
-  libraries/WiFi/src/WiFi.cpp
-  libraries/WiFi/src/WiFiClient.cpp
-  libraries/WiFi/src/WiFiSSLClient.cpp
-  libraries/WiFi/src/WiFiServer.cpp
-  libraries/WiFi/src/WiFiUdp.cpp
-  )
+set(LIBRARY_SRCS "")
 
 set(includedirs
-  variants/${CONFIG_ARDUINO_VARIANT}/
-  cores/esp32/
-  libraries/SPIS/src
-  libraries/WiFi/src
+  arduino/variants/${CONFIG_ARDUINO_VARIANT}/
+  arduino/cores/esp32/
   )
 
-set(srcs ${CORE_SRCS} ${LIBRARY_SRCS} ${BLE_SRCS})
-set(priv_includes cores/esp32/libb64)
+set(srcs ${CORE_SRCS})
+set(priv_includes arduino/cores/esp32/libb64)
 set(requires spi_flash mbedtls mdns esp_adc_cal wifi_provisioning nghttp wpa_supplicant)
 set(priv_requires fatfs nvs_flash app_update spiffs bootloader_support openssl bt esp_ipc esp_hid)
 

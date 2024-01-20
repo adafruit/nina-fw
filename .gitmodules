@@ -1,0 +1,3 @@
+[submodule "components/arduino"]
+	path = components/arduino/arduino
+	url = https://github.com/arduino/arduino-esp32.git
