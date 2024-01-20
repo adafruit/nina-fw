@@ -1,3 +1,15 @@
+Adafruit's Arduino NINA-W102 firmware 2.0.3 - 2024.01.20
+
+* Repo now points to arduino esp32 submodule thanks @rgov
+
+Adafruit's Arduino NINA-W102 firmware 2.0.2 - 2023.08.15
+
+* New AIO cert, new script for removing expired certs.
+
+Adafruit's Arduino NINA-W102 firmware 2.0.1 - 2023.08.14
+
+* Fix bug where esp_wifi_start() could happen before config
+
 Adafruit's Arduino NINA-W102 firmware 2.0.0alpha - 2023.06.23
 
 * Updated build environment to ESP-IDF 4.4.0
