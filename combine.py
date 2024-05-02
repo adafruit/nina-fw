@@ -16,6 +16,7 @@ def extract_firmware_version():
 
 booloaderData = open("build/bootloader/bootloader.bin", "rb").read()
 partitionData = open("build/partitions.bin", "rb").read()
+#phyData = open("data/phy.bin", "rb").read()
 appData = open("build/nina-fw.bin", "rb").read()
 
 # remove everything between certificate markers to save space. There might be comments and other information.
@@ -45,8 +46,8 @@ for i in range(0, len(booloaderData)):
 for i in range(0, len(partitionData)):
     outputData[0x8000 + i] = partitionData[i]
 
-for i in range(0, len(appData)):
-    outputData[0x30000 + i] = appData[i]
+#for i in range(0, len(phyData)):
+#    outputData[0xf000 + i] = phyData[i]
 
 for i in range(0, len(certsData)):
     outputData[0x10000 + i] = certsData[i]
@@ -54,9 +55,11 @@ for i in range(0, len(certsData)):
 # zero terminate the pem file
 outputData[0x10000 + len(certsData)] = 0
 
+for i in range(0, len(appData)):
+    outputData[0x30000 + i] = appData[i]
+
 version = extract_firmware_version()
 outputFilename = f"NINA_W102-{version}.bin"
-
 if len(sys.argv) > 1:
     outputFilename = sys.argv[1]
 

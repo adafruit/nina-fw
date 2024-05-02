@@ -20,8 +20,9 @@
 #include <errno.h>
 #include <string.h>
 
-#include <lwip/netdb.h>
 #include <lwip/sockets.h>
+
+#include "WiFi.h"
 
 #include "WiFiClient.h"
 
@@ -38,16 +39,16 @@ WiFiClient::WiFiClient(int socket) :
 
 int WiFiClient::connect(const char* host, uint16_t port)
 {
-  struct hostent* server = gethostbyname(host);
+  uint32_t address;
 
-  if (server == NULL) {
-      return 0;
+  if (!WiFi.hostByName(host, address)) {
+    return 0;
   }
 
-  return connect(server->h_addr, port);
+  return connect(address, port);
 }
 
-int WiFiClient::connect(/*IPAddress*/uint32_t ip, uint16_t port)
+int WiFiClient::connect(IPAddress ip, uint16_t port)
 {
   _socket = lwip_socket(AF_INET, SOCK_STREAM, 0);
 
@@ -86,15 +87,14 @@ size_t WiFiClient::write(const uint8_t *buf, size_t size)
     return 0;
   }
 
-  int result = lwip_send_r(_socket, (void*)buf, size, MSG_DONTWAIT);
+  int result = lwip_send_r(_socket, (void*)buf, size, MSG_PEEK);
 
   if (result < 0) {
-    lwip_close_r(_socket);
-    _socket = -1;
     return 0;
   }
 
   return result;
+
 }
 
 int WiFiClient::available()
@@ -105,6 +105,7 @@ int WiFiClient::available()
 
   int result = 0;
 
+  //This function returns the number of bytes of pending data already received in the socket’s network.
   if (lwip_ioctl_r(_socket, FIONREAD, &result) < 0) {
     lwip_close_r(_socket);
     _socket = -1;
@@ -150,7 +151,8 @@ int WiFiClient::peek()
 {
   uint8_t b;
 
-  if (recv(_socket, &b, sizeof(b), MSG_PEEK | MSG_DONTWAIT) <= 0) {
+  //This function tries to receive data from the network and can return an error if the connection when down.
+  if (lwip_recv_r(_socket, &b, sizeof(b), MSG_PEEK | MSG_DONTWAIT) <= 0) {
     if (errno != EWOULDBLOCK) {
       lwip_close_r(_socket);
       _socket = -1;
@@ -177,7 +179,10 @@ void WiFiClient::stop()
 uint8_t WiFiClient::connected()
 {
   if (_socket != -1) {
-    available();
+    //Check if there are already available data and, if not, try to read new ones from the network.
+    if (!available()) {
+      peek();
+    }
   }
 
   return (_socket != -1);

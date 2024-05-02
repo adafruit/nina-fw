@@ -1,3 +1,7 @@
+# Changelog
+
+## Adafruit firmware
+
 Adafruit's Arduino NINA-W102 firmware 1.7.7 - 2023.09.20
 
 * Change to use adafruit/certificates repo for roots.pem
@@ -60,6 +64,84 @@ Adafruit's Arduino NINA-W102 firmware 1.2.2 - 2019.04.04
 Adafruit's Arduino NINA-W102 firmware 1.2.2 - 2019.02.28
 
 * First official Adafruit release
+
+## Arduino firmware
+
+Arduino NINA-W102 firmware 1.5.0 - 2022.07.09
+
+* Add BSD-like sockets APIs (on command range 0x70 -> 0x7f)
+* Fix ADC readings range (fuill scale range is now ~2.7V)
+
+Arduino NINA-W102 firmware 1.4.8 - 2021.07.29
+
+* Fix issue due to repeated status()/connected() call (#73)
+
+Arduino NINA-W102 firmware 1.4.7 - 2021.06.18
+
+Functionally identical with 1.4.6, except version number.
+
+This release was made necessary because bad arguments were used with the FirmwareUploader tool
+on Arduino Cloud for updating NINA-FWs (effectively deleting all certificates except the one
+fetched by the tool). Now all Cloud-Connected NINA-FWs need to be updated once more which is
+only possible by incrementing the firmware version number.
+
+Arduino NINA-W102 firmware 1.4.6 - 2021.06.09
+
+* Add a new root certificate list including detailed instructions how to update it (#71)
+
+Arduino NINA-W102 firmware 1.4.5 - 2021.05.05
+
+* Adding support for Arduino RP2040 Nano Connect (#67)
+* Added ISRG Root X1 for LetsEncrypt (#68)
+
+Arduino NINA-W102 firmware 1.4.4 - 2021.04.13
+
+* Adding support for Arduino RP2040 Nano Connect (#64)
+
+Arduino NINA-W102 firmware 1.4.3 - 2021.01.29
+
+* Do not immediately close connection after 1 failed write (#62)
+
+Arduino NINA-W102 firmware 1.4.2 - 2021.01.28
+
+Port BearSSL + crypto integration to NINA (#57). This allows to offload BearSSL for Arduino IoT Cloud applications to the nina module, drastically saving on flash/RAM.
+
+Arduino NINA-W102 firmware 1.4.1 - 2020.08.17
+
+* Direct download of OTA binary to Nina storage and verifying both CRC and length (#53)
+
+Arduino NINA-W102 firmware 1.4.0 - 2020.07.13
+
+* Adding API which allows to utilize the nina file system as an external storage module for the host CPU (#32)
+* Fixing bug leading to packet corruption in situation of high UDP traffic (#49)
+* Fixing bug leading to missing packets and connection drop (#50)
+
+Arduino NINA-W102 firmware 1.3.0 - 2019.12.23
+
+* Fixed channel's assignement for WiFi.beginAP(...)
+* Fixed set host name API begin connecting to AP
+* Updated to IDF v3.3.1
+* Added WPA2 Enterprise support (PEAP/MSCHAPv2 + EAP-TLS)
+
+Arduino NINA-W102 firmware 1.2.4 - 2019.06.14
+
+* Disabled CONFIG_LWIP_DHCP_DOES_ARP_CHECK
+* Added small delay to WiFiUDP.parsePacket() allow other tasks to run
+* Updated to esp-idf v3.3 branch
+
+Arduino NINA-W102 firmware 1.2.3 - 2018.04.09
+
+* Added reason code command to retrieve the disconnect reason code
+* WiFiSSLClient: enable SNI via mbedtls_ssl_set_hostname when using hostname
+
+Arduino NINA-W102 firmware 1.2.2 - 2018.03.26
+
+* Changed connections to use WIFI_FAST_SCAN instead of WIFI_ALL_CHANNEL_SCAN
+* Changed ASSOC_FAIL error handling, to now try to re-connect
+* Added phy_init partition with u-blox recommended phy init data and use
+* Fixed socket connections hanging when WiFi is disconnected
+* Fixed issues where DNS server could be reset to 0.0.0.0 on WiFi re-connections
+* Updated to use esp-idf 3.1.3
 
 Arduino NINA-W102 firmware 1.2.1 - 2018.11.16
 

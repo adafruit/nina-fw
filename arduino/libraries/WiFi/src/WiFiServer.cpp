@@ -26,12 +26,7 @@
 #include "WiFiServer.h"
 
 WiFiServer::WiFiServer() :
-  WiFiServer(0)
-{
-}
-
-WiFiServer::WiFiServer(uint16_t port) :
-  _port(port),
+  _port(0),
   _socket(-1)
 {
   for (int i = 0; i < CONFIG_LWIP_MAX_SOCKETS; i++) {
@@ -39,12 +34,12 @@ WiFiServer::WiFiServer(uint16_t port) :
   }
 }
 
-void WiFiServer::begin()
+uint8_t WiFiServer::begin(uint16_t port)
 {
   _socket = lwip_socket(AF_INET, SOCK_STREAM, 0);
 
   if (_socket < 0) {
-    return;
+    return 0;
   }
 
   struct sockaddr_in addr;
@@ -52,29 +47,38 @@ void WiFiServer::begin()
 
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = (uint32_t)0;
-  addr.sin_port = htons(_port);
+  addr.sin_port = htons(port);
 
   if (lwip_bind(_socket, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
     lwip_close_r(_socket);
     _socket = -1;
-    return;
+    return 0;
   }
 
   if (lwip_listen(_socket, 1) < 0) {
     lwip_close_r(_socket);
     _socket = -1;
-    return;
+    return 0;
   }
 
   int nonBlocking = 1;
   lwip_ioctl_r(_socket, FIONBIO, &nonBlocking);
 
-  return;
+  // Set port.
+  _port = port;
+
+  return 1;
 }
 
 WiFiClient WiFiServer::available(uint8_t* status)
 {
-  int result = lwip_accept(_socket, NULL, 0);
+  int result = -1;
+  if (_accepted_sock >= 0) {
+    result = _accepted_sock;
+    _accepted_sock = -1;
+  } else {
+    result = lwip_accept(_socket, NULL, 0);
+  }
 
   if (status) {
     *status = (result != -1);
@@ -109,6 +113,25 @@ WiFiClient WiFiServer::available(uint8_t* status)
   }
 
   return WiFiClient(result);
+}
+
+WiFiClient WiFiServer::accept()
+{
+  int result = -1;
+  if (_accepted_sock >= 0) {
+    result = _accepted_sock;
+    _accepted_sock = -1;
+  } else {
+    result = lwip_accept(_socket, NULL, 0);
+  }
+  return WiFiClient(result);
+}
+
+bool WiFiServer::hasClient() {
+  if (_accepted_sock != -1) 
+    return true;
+  _accepted_sock = lwip_accept(_socket, NULL, 0);
+  return (_accepted_sock != -1);
 }
 
 uint8_t WiFiServer::status() {

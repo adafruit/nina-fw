@@ -36,10 +36,15 @@ private:
   static void onWiFiReceive();
   void handleWiFiReceive();
 
+  static void onWiFiDisconnect();
+  void handleWiFiDisconnect();
+
 private:
   SemaphoreHandle_t _updateGpio0PinSemaphore;
 };
 
 extern CommandHandlerClass CommandHandler;
+
+extern "C" int downloadAndSaveFile(char * url, FILE * f, const char * cert_pem);
 
 #endif

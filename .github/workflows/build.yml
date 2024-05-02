@@ -16,6 +16,12 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        config:
+          - 'release'
+          - 'debug'
     steps:
     - name: Setup Python
       uses: actions/setup-python@v4
@@ -26,24 +32,31 @@ jobs:
       run: docker pull espressif/idf:v3.3.1
 
     - name: Checkout
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Checkout submodules
       run: git submodule update --init --depth 1 certificates
 
     - name: Build
+      if: matrix.config == 'release'
       run: docker run --rm -v $PWD:/project -w /project espressif/idf:v3.3.1 make firmware
+
+    - name: Build for Debug
+      if: matrix.config == 'debug'
+      run: |
+        docker run --rm -v $PWD:/project -w /project espressif/idf:v3.3.1 make NINA_DEBUG=1 firmware
+        mv NINA_W102*.bin "$(echo NINA_W102*.bin | sed 's/.bin/_debug.bin/')"
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v3
       with:
-        name: NINA_W102-${{ github.sha }}
+        name: NINA_W102-${{ matrix.config }}-${{ github.sha }}
         path: |
           NINA_W102*.bin
 
     - name: Upload Release Asset
       uses: softprops/action-gh-release@v1
-      if: ${{ github.event_name == 'release' }}
+      if: github.event_name == 'release' && matrix.config == 'release'
       with:
         files: |
           NINA_W102*.bin

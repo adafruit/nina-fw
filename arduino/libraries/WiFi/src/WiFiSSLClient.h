@@ -22,14 +22,13 @@
 
 #include <mbedtls/net.h>
 #include <mbedtls/ssl.h>
-#include <mbedtls/platform.h>
 #include <mbedtls/entropy.h>
 #include <mbedtls/ctr_drbg.h>
 #include <mbedtls/error.h>
-#include <mbedtls/debug.h>
 
 #include <Arduino.h>
-
+// #include <Client.h>
+// #include <IPAddress.h>
 
 class WiFiSSLClient /*: public Client*/ {
 
@@ -40,7 +39,6 @@ public:
 
   virtual int connect(/*IPAddress*/uint32_t ip, uint16_t port);
   virtual int connect(const char* host, uint16_t port);
-  virtual int connect(const char* host, uint16_t port, const char* client_cert, const char* client_key);
   virtual size_t write(uint8_t);
   virtual size_t write(const uint8_t *buf, size_t size);
   virtual int available();
@@ -59,7 +57,9 @@ public:
 
   virtual /*IPAddress*/uint32_t remoteIP();
   virtual uint16_t remotePort();
-  const char *pers = "esp32-tls";
+
+private:
+  int connect(const char* host, uint16_t port, bool sni);
 
 private:
   static const char* ROOT_CAs;

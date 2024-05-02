@@ -21,8 +21,16 @@
 
 extern "C" {
   #include <driver/periph_ctrl.h>
+
   #include <driver/uart.h>
   #include <esp_bt.h>
+
+  #include "esp_spiffs.h"
+  #include "esp_log.h"
+  #include <stdio.h>
+  #include <sys/types.h>
+  #include <dirent.h>
+  #include "esp_partition.h"
 }
 
 #include <Arduino.h>
@@ -34,7 +42,11 @@ extern "C" {
 
 #define SPI_BUFFER_LEN SPI_MAX_DMA_LEN
 
+#ifdef NINA_DEBUG
+int debug = 1;
+#else
 int debug = 0;
+#endif
 
 uint8_t* commandBuffer;
 uint8_t* responseBuffer;
@@ -91,6 +103,13 @@ void setup() {
   pinMode(15, INPUT);
   pinMode(21, INPUT);
 
+#if defined(NANO_RP2040_CONNECT)
+  pinMode(26, OUTPUT);
+  pinMode(27, OUTPUT);
+  digitalWrite(26, HIGH);
+  digitalWrite(27, HIGH);
+#endif
+
   pinMode(5, INPUT);
   if (digitalRead(5) == LOW) {
     if (debug)  ets_printf("*** BLUETOOTH ON\n");
@@ -113,27 +132,29 @@ void setupBluetooth() {
 
   if (debug)  ets_printf("setup pins\n");
 
-#ifdef UNO_WIFI_REV2
-  uart_set_pin(UART_NUM_1, 1, 3, 33, 0); // TX, RX, RTS, CTS
-#elif defined(AIRLIFT)
+#if defined(AIRLIFT)
   // TX GPIO1 & RX GPIO3 on ESP32 'hardware' UART
   // RTS on ESP_BUSY (GPIO33)
   // CTS on GPIO0 (GPIO0)
   // uart_set_pin(UART_NUM_1, 22, 23, 33, 0);
   uart_set_pin(UART_NUM_1, 1, 3, 33, 0);
+#elif defined(UNO_WIFI_REV2)
+  uart_set_pin(UART_NUM_1, 1, 3, 33, 0); // TX, RX, RTS, CTS
+#elif defined(NANO_RP2040_CONNECT)
+  uart_set_pin(UART_NUM_1, 1, 3, 33, 12); // TX, RX, RTS, CTS
 #else
   uart_set_pin(UART_NUM_1, 23, 12, 18, 5);
-  uart_set_hw_flow_ctrl(UART_NUM_1, UART_HW_FLOWCTRL_CTS_RTS, 5);
 #endif
+  uart_set_hw_flow_ctrl(UART_NUM_1, UART_HW_FLOWCTRL_CTS_RTS, 5);
 
   if (debug)  ets_printf("setup controller\n");
 
   esp_bt_controller_config_t btControllerConfig = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
 
   btControllerConfig.hci_uart_no = UART_NUM_1;
-#ifdef UNO_WIFI_REV2
+#if defined(AIRLIFT)
   btControllerConfig.hci_uart_baudrate = 115200;
-#elif defined(AIRLIFT)
+#elif defined(UNO_WIFI_REV2) || defined(NANO_RP2040_CONNECT)
   btControllerConfig.hci_uart_baudrate = 115200;
 #else
   btControllerConfig.hci_uart_baudrate = 912600;
@@ -155,10 +176,27 @@ void setupBluetooth() {
   }
 }
 
+unsigned long getTime() {
+  int ret = 0;
+  do {
+    ret = WiFi.getTime();
+  } while (ret == 0);
+  return ret;
+}
+
 void setupWiFi() {
   esp_bt_controller_mem_release(ESP_BT_MODE_BTDM);
   if (debug)  ets_printf("*** SPIS\n");
   SPIS.begin();
+
+  esp_vfs_spiffs_conf_t conf = {
+    .base_path = "/fs",
+    .partition_label = "storage",
+    .max_files = 20,
+    .format_if_mount_failed = true
+  };
+
+  esp_err_t ret = esp_vfs_spiffs_register(&conf);
 
   if (WiFi.status() == WL_NO_SHIELD) {
     if (debug)  ets_printf("*** NOSHIELD\n");

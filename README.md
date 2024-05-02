@@ -37,10 +37,33 @@ original Arduino firmware repository.
    to load this binary file onto your board.
     a. If you do not know how to do this, [we have an excellent guide on the Adafruit Learning System for upgrading your ESP32's firmware](https://learn.adafruit.com/upgrading-esp32-firmware)
 
+## Packaging
+The `make` command produces a bunch of binary files that must be flashed at very precise locations, making `esptool` commandline quite complicated.
+Instead, once the firmware has been compiled, you can invoke `combine.py` script to produce a monolithic binary that can be flashed at 0x0.
+```
+make
+python combine.py
+```
+This produces `NINA_W102.bin-{version}` file (a different name can be specified as parameter). To flash this file you can use https://learn.adafruit.com/upgrading-esp32-firmware
+
+## Build a new certificate list (based on the Google Android root CA list)
+```bash
+git clone https://android.googlesource.com/platform/system/ca-certificates
+cp nina-fw/tools/nina-fw-create-roots.sh ca-certificates/files
+cd ca-certificates/files
+./nina-fw-create-roots.sh
+cp roots.pem ../../nina-fw/data/roots.pem
+```
+
+## Check certificate list against URL list
+```bash
+cd tools
+./sslcheck.sh -c ../data/roots.pem -l url_lists/url_list_moz.com.txt -e
+```
 
 ## License
 
-Copyright (c) 2018 Arduino SA. All rights reserved.
+Copyright (c) 2018-2019 Arduino SA. All rights reserved.
 
 This library is free software; you can redistribute it and/or
 modify it under the terms of the GNU Lesser General Public

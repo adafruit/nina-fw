@@ -17,8 +17,6 @@
   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
-#include "Arduino.h"
-#include <lwip/err.h>
 #include <lwip/netdb.h>
 #include <lwip/sockets.h>
 #include "esp_partition.h"
@@ -52,103 +50,80 @@ WiFiSSLClient::WiFiSSLClient() :
   _mbedMutex = xSemaphoreCreateRecursiveMutex();
 }
 
-int WiFiSSLClient::connect(const char* host, uint16_t port)
+int WiFiSSLClient::connect(const char* host, uint16_t port, bool sni)
 {
-  ets_printf("** Connect(host/port) Called\n");
-  return connect(host, port, _cert, _private_key);
-}
-
-int WiFiSSLClient::connect(const char* host, uint16_t port, const char* client_cert, const char* client_key)
-{
-  ets_printf("** Connect(host/port/cert/key) called\n");
-  int ret, flags;
   synchronized {
     _netContext.fd = -1;
     _connected = false;
 
-    ets_printf("Free internal heap before TLS %u\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
-
+    // free heap should be 140KB for this connect ssl to work
+    ets_printf("Free heap before TLS %u\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
     ets_printf("*** connect init\n");
-    // SSL Client Initialization
+
     mbedtls_ssl_init(&_sslContext);
     mbedtls_ctr_drbg_init(&_ctrDrbgContext);
     mbedtls_ssl_config_init(&_sslConfig);
-
+    mbedtls_entropy_init(&_entropyContext);
+    mbedtls_x509_crt_init(&_caCrt);
     mbedtls_net_init(&_netContext);
 
-    ets_printf("*** connect inited\n");
-
-    ets_printf("*** connect drbgseed\n");
-    mbedtls_entropy_init(&_entropyContext);
     // Seeds and sets up CTR_DRBG for future reseeds, pers is device personalization (esp)
-    ret = mbedtls_ctr_drbg_seed(&_ctrDrbgContext, mbedtls_entropy_func,
-                              &_entropyContext, (const unsigned char *) pers, strlen(pers));
-    if (ret < 0) {
+    const char *pers = "esp32-tls";
+    if (mbedtls_ctr_drbg_seed(&_ctrDrbgContext, mbedtls_entropy_func, &_entropyContext, (const unsigned char *) pers, strlen(pers)) != 0) {
       ets_printf("Unable to set up mbedtls_entropy.\n");
       stop();
       return 0;
     }
 
-    ets_printf("*** connect ssl hostname\n");
-     /* Hostname set here should match CN in server certificate */
-    if(mbedtls_ssl_set_hostname(&_sslContext, host) != 0) {
+    if (mbedtls_ssl_config_defaults(&_sslConfig, MBEDTLS_SSL_IS_CLIENT, MBEDTLS_SSL_TRANSPORT_STREAM, MBEDTLS_SSL_PRESET_DEFAULT) != 0) {
+      ets_printf("Error Setting up SSL Config\n");
       stop();
       return 0;
     }
 
-    ets_printf("*** connect ssl config\n");
-     ret= mbedtls_ssl_config_defaults(&_sslConfig, MBEDTLS_SSL_IS_CLIENT,
-                                        MBEDTLS_SSL_TRANSPORT_STREAM,
-                                        MBEDTLS_SSL_PRESET_DEFAULT);
-      if (ret != 0) {
-      stop();
-      ets_printf("Error Setting up SSL Config: %d\n", ret);
-      return 0;
-      }
-
-    ets_printf("*** connect authmode\n");
     // we're always using the root CA cert from partition, so MBEDTLS_SSL_VERIFY_REQUIRED
-    ets_printf("*** Loading CA Cert...\n");
-    mbedtls_x509_crt_init(&_caCrt);
     mbedtls_ssl_conf_authmode(&_sslConfig, MBEDTLS_SSL_VERIFY_REQUIRED);
 
     // setting up CA certificates from partition
+    ets_printf("*** Loading CA Cert...\n");
     spi_flash_mmap_handle_t handle;
     const unsigned char* certs_data = {};
-    ets_printf("*** connect part findfirst\n");
+
     const esp_partition_t* part = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_ANY, "certs");
     if (part == NULL) {
       stop();
       return 0;
     }
 
-    ets_printf("*** connect part mmap\n");
     int ret = esp_partition_mmap(part, 0, part->size, SPI_FLASH_MMAP_DATA, (const void**)&certs_data, &handle);
     if (ret != ESP_OK) {
       ets_printf("*** Error partition mmap %d\n", ret);
       stop();
       return 0;
     }
+    ets_printf("  Length of certs_data: %d\n", strlen((char*)certs_data)+1);
 
-    ets_printf("Length of certs_data: %d\n", strlen((char*)certs_data)+1);
+    // mbedtls_x509_crt_parse() requires ~92000 bytes from heap
     ets_printf("*** connect crt parse\n");
+    ets_printf("  Free heap before: %u\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
     ret = mbedtls_x509_crt_parse(&_caCrt, certs_data, strlen((char*)certs_data) + 1);
-    ets_printf("*** connect conf ca chain\n");
-    mbedtls_ssl_conf_ca_chain(&_sslConfig, &_caCrt, NULL);
     if (ret < 0) {
       ets_printf("*** Error parsing CA chain.\n");
       stop();
       return 0;
     }
+    ets_printf("  Free heap after : %u\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
 
-    ets_printf("*** check for client_cert and client_key\n");
-    if (client_cert != NULL && client_key != NULL) {
+    mbedtls_ssl_conf_ca_chain(&_sslConfig, &_caCrt, NULL);
+
+    ets_printf("*** check for _cert and _private_key\n");
+    if (_cert != NULL && _private_key != NULL) {
         mbedtls_x509_crt_init(&_clientCrt);
         mbedtls_pk_init(&_clientKey);
 
         ets_printf("*** Loading client certificate.\n");
         // note: +1 added for line ending
-        ret = mbedtls_x509_crt_parse(&_clientCrt, (const unsigned char *)client_cert, strlen(client_cert) + 1);
+        ret = mbedtls_x509_crt_parse(&_clientCrt, (const unsigned char *)_cert, strlen(_cert) + 1);
         if (ret != 0) {
           ets_printf("ERROR: Client cert not parsed properly(%d)\n", ret);
           stop();
@@ -156,7 +131,7 @@ int WiFiSSLClient::connect(const char* host, uint16_t port, const char* client_c
         }
 
         ets_printf("*** Loading private key.\n");
-        ret = mbedtls_pk_parse_key(&_clientKey, (const unsigned char *)client_key, strlen(client_key)+1,
+        ret = mbedtls_pk_parse_key(&_clientKey, (const unsigned char *)_private_key, strlen(_private_key)+1,
                                    NULL, 0);
         if (ret != 0) {
           ets_printf("ERROR: Private key not parsed properly:(%d)\n", ret);
@@ -166,7 +141,7 @@ int WiFiSSLClient::connect(const char* host, uint16_t port, const char* client_c
         // set own certificate chain and key
         ret = mbedtls_ssl_conf_own_cert(&_sslConfig, &_clientCrt, &_clientKey);
         if (ret != 0) {
-          if (ret == -0x7f00) {
+          if (ret == MBEDTLS_ERR_SSL_ALLOC_FAILED) {
             ets_printf("ERROR: Memory allocation failed, MBEDTLS_ERR_SSL_ALLOC_FAILED");
           }
           ets_printf("Private key not parsed properly(%d)\n", ret);
@@ -178,53 +153,63 @@ int WiFiSSLClient::connect(const char* host, uint16_t port, const char* client_c
       ets_printf("Client certificate and key not provided.\n");
     }
 
-    ets_printf("*** connect conf RNG\n");
     mbedtls_ssl_conf_rng(&_sslConfig, mbedtls_ctr_drbg_random, &_ctrDrbgContext);
 
+    // mbedtls_ssl_setup() requires ~36000 bytes from heap
     ets_printf("*** connect ssl setup\n");
+    ets_printf("  Free heap before: %u\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
     if ((ret = mbedtls_ssl_setup(&_sslContext, &_sslConfig)) != 0) {
-      if (ret == -0x7f00){
-        ets_printf("%s", &_clientCrt);
-        ets_printf("Memory allocation failed (MBEDTLS_ERR_SSL_ALLOC_FAILED)\n");
-        ets_printf("Free internal heap: %u\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
-      }
       ets_printf("Unable to connect ssl setup %d\n", ret);
+      if (ret == MBEDTLS_ERR_SSL_ALLOC_FAILED){
+        ets_printf("  Memory allocation failed (MBEDTLS_ERR_SSL_ALLOC_FAILED)\n");
+        ets_printf("  %s", &_clientCrt);
+      }
+      stop();
+      return 0;
+    }
+    ets_printf("  Free heap after : %u\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
+
+    if (sni && mbedtls_ssl_set_hostname(&_sslContext, host) != 0) {
       stop();
       return 0;
     }
 
     char portStr[6];
     itoa(port, portStr, 10);
-    ets_printf("*** connect netconnect\n");
+
     if (mbedtls_net_connect(&_netContext, host, portStr, MBEDTLS_NET_PROTO_TCP) != 0) {
       stop();
       return 0;
     }
 
-    ets_printf("*** connect set bio\n");
     mbedtls_ssl_set_bio(&_sslContext, &_netContext, mbedtls_net_send, mbedtls_net_recv, NULL);
 
+    // mbedtls_ssl_handshake() requires ~5600 bytes from heap
     ets_printf("*** start SSL/TLS handshake...\n");
-    unsigned long start_handshake = millis();
-    // ref: https://tls.mbed.org/api/ssl_8h.html#a4a37e497cd08c896870a42b1b618186e
-    while ((ret = mbedtls_ssl_handshake(&_sslContext)) !=0) {
-      if (ret != MBEDTLS_ERR_SSL_WANT_READ && ret != MBEDTLS_ERR_SSL_WANT_WRITE) {
-        ets_printf("Error performing SSL handshake\n");
+    ets_printf("  Free heap before: %u\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
+    do {
+      ret = mbedtls_ssl_handshake(&_sslContext);
+    } while (ret == MBEDTLS_ERR_SSL_WANT_READ || ret == MBEDTLS_ERR_SSL_WANT_WRITE);
+    ets_printf("  Free heap after : %u\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
+
+    if (ret != 0) {
+      ets_printf("Error performing SSL handshake %d\n", ret);
+      if (ret == MBEDTLS_ERR_SSL_ALLOC_FAILED) {
+        ets_printf("  Memory allocation failed (MBEDTLS_ERR_SSL_ALLOC_FAILED)\n");
+      } else if (ret == MBEDTLS_ERR_X509_ALLOC_FAILED){
+        ets_printf(  "X509 allocation failed (MBEDTLS_ERR_X509_ALLOC_FAILED)\n");
       }
-      if((millis() - start_handshake) > _handshake_timeout){
-        ets_printf("SSL Handshake Timeout\n");
-        stop();
-        return -1;
-      }
-      vTaskDelay(10 / portTICK_PERIOD_MS);
+      stop();
+      return 0;
     }
 
-    if (client_cert != NULL && client_key != NULL)
-    {
+
+    if (_cert != NULL && _private_key != NULL) {
       ets_printf("Protocol is %s Ciphersuite is %s", mbedtls_ssl_get_version(&_sslContext), mbedtls_ssl_get_ciphersuite(&_sslContext));
     }
     ets_printf("Verifying peer X.509 certificate\n");
     char buf[512];
+    int flags;
     if ((flags = mbedtls_ssl_get_verify_result(&_sslContext)) != 0) {
       bzero(buf, sizeof(buf));
       mbedtls_x509_crt_verify_info(buf, sizeof(buf), "  ! ", flags);
@@ -235,24 +220,30 @@ int WiFiSSLClient::connect(const char* host, uint16_t port, const char* client_c
       ets_printf("Certificate chain verified.\n");
     }
 
-    ets_printf("*** ssl set nonblock\n");
     mbedtls_net_set_nonblock(&_netContext);
 
-    ets_printf("Free internal heap before cleanup: %u\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
     // free the heap
+    ets_printf("Free heap before cleanup: %u\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
     if (certs_data != NULL) {
       mbedtls_x509_crt_free(&_caCrt);
     }
-    if (client_cert != NULL) {
+    if (_cert != NULL) {
       mbedtls_x509_crt_free(&_clientCrt);
     }
-    if (client_key !=NULL) {
+    if (_private_key !=NULL) {
       mbedtls_pk_free(&_clientKey);
     }
-    ets_printf("Free internal heap after cleanup: %u\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
+    ets_printf("Free heap after cleanup : %u\n", heap_caps_get_free_size(MALLOC_CAP_8BIT));
+
     _connected = true;
+
     return 1;
   }
+}
+
+int WiFiSSLClient::connect(const char* host, uint16_t port)
+{
+  return connect(host, port, true);
 }
 
 int WiFiSSLClient::connect(/*IPAddress*/uint32_t ip, uint16_t port)
@@ -261,7 +252,7 @@ int WiFiSSLClient::connect(/*IPAddress*/uint32_t ip, uint16_t port)
 
   sprintf(ipStr, "%d.%d.%d.%d", ((ip & 0xff000000) >> 24), ((ip & 0x00ff0000) >> 16), ((ip & 0x0000ff00) >> 8), ((ip & 0x000000ff) >> 0)/*ip[0], ip[1], ip[2], ip[3]*/);
 
-  return connect(ipStr, port);
+  return connect(ipStr, port, false);
 }
 
 size_t WiFiSSLClient::write(uint8_t b)
