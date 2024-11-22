@@ -34,7 +34,7 @@ extern "C" {
 
 #define SPI_BUFFER_LEN SPI_MAX_DMA_LEN
 
-int debug = 0;
+int debug = 1;
 
 uint8_t* commandBuffer;
 uint8_t* responseBuffer;
