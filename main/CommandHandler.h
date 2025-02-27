@@ -28,15 +28,14 @@ public:
 
   void begin();
   int handle(const uint8_t command[], uint8_t response[]);
+  static void onWiFiReceive();
+  static void onWiFiDisconnect(arduino_event_t*);
 
 private:
   static void gpio0Updater(void*);
+  static int ping(/*IPAddress*/uint32_t host, uint8_t ttl);
   void updateGpio0Pin();
-
-  static void onWiFiReceive();
   void handleWiFiReceive();
-
-  static void onWiFiDisconnect();
   void handleWiFiDisconnect();
 
 private:

@@ -1,54 +1,109 @@
 idf_component_register(SRCS
-  cores/esp32/delay.c
-  cores/esp32/IPAddress.cpp
-  cores/esp32/itoa.c
-  cores/esp32/main.cpp
-  cores/esp32/Print.cpp
-  cores/esp32/Stream.cpp
-  cores/esp32/WInterrupts.c
-  cores/esp32/wiring_analog.c
-  cores/esp32/wiring.c
-  cores/esp32/wiring_digital.c
-  cores/esp32/WMath.cpp
-  cores/esp32/WString.cpp
+  # Arduino core sources needed.
+  arduino-esp32/cores/esp32/esp32-hal-gpio.c
+  arduino-esp32/cores/esp32/esp32-hal-ledc.c
+  arduino-esp32/cores/esp32/esp32-hal-misc.c
+  arduino-esp32/cores/esp32/esp32-hal-time.c
+  arduino-esp32/cores/esp32/FunctionalInterrupt.cpp
+  arduino-esp32/cores/esp32/IPAddress.cpp
+  arduino-esp32/cores/esp32/main.cpp
+  arduino-esp32/cores/esp32/Print.cpp
+  arduino-esp32/cores/esp32/stdlib_noniso.c
+  arduino-esp32/cores/esp32/Stream.cpp
+  arduino-esp32/cores/esp32/Stream.cpp
+  arduino-esp32/cores/esp32/WMath.cpp
+  arduino-esp32/cores/esp32/WString.cpp
 
-  libraries/ArduinoBearSSL/src/aiotc_profile.c
-  libraries/ArduinoBearSSL/src/ArduinoBearSSL.cpp
-  libraries/ArduinoBearSSL/src/BearSSLClient.cpp
-  libraries/ArduinoBearSSL/src/SHA1.cpp
-  libraries/ArduinoBearSSL/src/SHA256.cpp
-  libraries/ArduinoBearSSL/src/SHA.cpp
+  # Use arduino-esp32 libraries instead of our own versions when possible
 
-  libraries/ArduinoECCX08/src/ECCX08.cpp
-  libraries/ArduinoECCX08/src/utility/ASN1Utils.cpp
-  libraries/ArduinoECCX08/src/utility/ECCX08CSR.cpp
-  libraries/ArduinoECCX08/src/utility/ECCX08JWS.cpp
-  libraries/ArduinoECCX08/src/utility/ECCX08SelfSignedCert.cpp
-  libraries/ArduinoECCX08/src/utility/PEMUtils.cpp
-  libraries/ArduinoECCX08/src/utility/sha1.c
+  arduino-esp32/libraries/Network/src/NetworkClient.cpp
+  arduino-esp32/libraries/Network/src/NetworkClient.h
+  arduino-esp32/libraries/Network/src/NetworkEvents.cpp
+  arduino-esp32/libraries/Network/src/NetworkEvents.h
+  arduino-esp32/libraries/Network/src/Network.h
+  arduino-esp32/libraries/Network/src/NetworkInterface.cpp
+  arduino-esp32/libraries/Network/src/NetworkInterface.h
+  arduino-esp32/libraries/Network/src/NetworkManager.cpp
+  arduino-esp32/libraries/Network/src/NetworkManager.h
+  arduino-esp32/libraries/Network/src/NetworkServer.cpp
+  arduino-esp32/libraries/Network/src/NetworkServer.h
+  arduino-esp32/libraries/Network/src/NetworkUdp.cpp
 
-  libraries/SPIS/src/SPIS.cpp
+  arduino-esp32/libraries/NetworkClientSecure/src/NetworkClientSecure.cpp
+  arduino-esp32/libraries/NetworkClientSecure/src/NetworkClientSecure.h
+  arduino-esp32/libraries/NetworkClientSecure/src/ssl_client.cpp
+  arduino-esp32/libraries/NetworkClientSecure/src/ssl_client.h
 
-  libraries/WiFi/src/WiFiClient.cpp
-  libraries/WiFi/src/WiFi.cpp
-  libraries/WiFi/src/WiFiServer.cpp
-  libraries/WiFi/src/WiFiSSLClient.cpp
-  libraries/WiFi/src/WiFiUdp.cpp
-  libraries/Wire/src/Wire.cpp
+  arduino-esp32/libraries/WiFi/src/AP.cpp
+  arduino-esp32/libraries/WiFi/src/STA.cpp
+  arduino-esp32/libraries/WiFi/src/WiFiAP.cpp
+  arduino-esp32/libraries/WiFi/src/WiFiAP.h
+  arduino-esp32/libraries/WiFi/src/WiFiClient.h
+  arduino-esp32/libraries/WiFi/src/WiFi.cpp
+  arduino-esp32/libraries/WiFi/src/WiFiGeneric.cpp
+  arduino-esp32/libraries/WiFi/src/WiFiGeneric.h
+  arduino-esp32/libraries/WiFi/src/WiFi.h
+  arduino-esp32/libraries/WiFi/src/WiFiMulti.cpp
+  arduino-esp32/libraries/WiFi/src/WiFiMulti.h
+  arduino-esp32/libraries/WiFi/src/WiFiScan.cpp
+  arduino-esp32/libraries/WiFi/src/WiFiScan.h
+  arduino-esp32/libraries/WiFi/src/WiFiServer.h
+  arduino-esp32/libraries/WiFi/src/WiFiSTA.cpp
+  arduino-esp32/libraries/WiFi/src/WiFiSTA.h
+  arduino-esp32/libraries/WiFi/src/WiFiType.h
+  arduino-esp32/libraries/WiFi/src/WiFiUdp.h
+
+  arduino-esp32/libraries/Wire/src/Wire.cpp
 
   INCLUDE_DIRS
-  cores/esp32
-  libraries/ArduinoBearSSL/src
-  libraries/ArduinoECCX08/src
+  arduino-esp32/cores/esp32
+  # For pins_arduino.h
+  arduino-esp32/variants/esp32
+  arduino-esp32/libraries/Network/src
+  arduino-esp32/libraries/NetworkClientSecure/src
+  arduino-esp32/libraries/WiFi/src
+  arduino-esp32/libraries/Wire/src
   libraries/SPIS/src
-  libraries/WiFi/src
-  libraries/Wire/src
 
   PRIV_INCLUDE_DIRS
-  cores/esp32
-  libraries/ArduinoBearSSL/src
-  libraries/ArduinoECCX08/src
+  arduino-esp32/cores/esp32
+  # For pins_arduino.h
+  arduino-esp32/variants/esp32
+  arduino-esp32/libraries/Network/src
+  arduino-esp32/libraries/NetworkClientSecure/src
+  arduino-esp32/libraries/WiFi/src
+  arduino-esp32/libraries/Wire/src
   libraries/SPIS/src
-  libraries/WiFi/src
-  libraries/Wire/src
+
+  REQUIRES
+  bt
+  esp_driver_ledc
+  esp_driver_gpio
+  esp_driver_gptimer
+  esp_driver_spi
+  esp_driver_uart
+  esp_eth
+  esp_http_client
+  esp_partition
+  esp_netif
+  esp_ringbuf
+  esp_timer
+  mbedtls
+  nvs_flash
+  soc
+  spiffs
+  wpa_supplicant
 )
+
+add_compile_definitions(
+  ARDUINO
+  ARDUINO_EVENT_RUNNING_CORE=1
+  ARDUINO_RUNNING_CORE=1
+  )
+
+# If we needed to use LWIP_HOOK_IP4_INPUT (see CommandHandler.cpp), add a hook this way.
+# idf_component_get_property(lwip lwip COMPONENT_LIB)
+# target_compile_options(${lwip} PRIVATE "-I${PROJECT_DIR}/main")
+# target_compile_definitions(${lwip} PRIVATE "-DESP_IDF_LWIP_HOOK_FILENAME=\"lwip_hooks.h\"")
+
+add_subdirectory(libraries/SPIS)

@@ -20,10 +20,12 @@
 #include <rom/uart.h>
 
 extern "C" {
-  #include <driver/periph_ctrl.h>
-
-  #include <driver/uart.h>
-  #include <esp_bt.h>
+  #include "esp_private/periph_ctrl.h"
+  #include "driver/gpio.h"
+  #include "driver/uart.h"
+  #include "esp_bt.h"
+  #include "soc/gpio_periph.h"
+  #include "soc/periph_defs.h"
 
   #include "esp_spiffs.h"
   #include "esp_log.h"
@@ -197,7 +199,8 @@ void setupWiFi() {
     .format_if_mount_failed = true
   };
 
-  esp_err_t ret = esp_vfs_spiffs_register(&conf);
+  // report error?
+  esp_vfs_spiffs_register(&conf);
 
   if (WiFi.status() == WL_NO_SHIELD) {
     if (debug)  ets_printf("*** NOSHIELD\n");
