@@ -19,21 +19,23 @@
 
 #include <rom/uart.h>
 
-extern "C" {
-  #include "esp_private/periph_ctrl.h"
-  #include "driver/gpio.h"
-  #include "driver/uart.h"
-  #include "esp_bt.h"
-  #include "soc/gpio_periph.h"
-  #include "soc/periph_defs.h"
+// Equivalent to #include "esp_log.h" when using Arduino.
+#ifdef ARDUINO_ARCH_ESP32
+#include "esp32-hal-log.h"
+#endif
 
-  #include "esp_spiffs.h"
-  #include "esp_log.h"
-  #include <stdio.h>
-  #include <sys/types.h>
-  #include <dirent.h>
-  #include "esp_partition.h"
-}
+#include "esp_private/periph_ctrl.h"
+#include "driver/gpio.h"
+#include "driver/uart.h"
+#include "esp_bt.h"
+#include "soc/gpio_periph.h"
+#include "soc/periph_defs.h"
+
+#include "esp_spiffs.h"
+#include <stdio.h>
+#include <sys/types.h>
+#include <dirent.h>
+#include "esp_partition.h"
 
 #include <Arduino.h>
 
@@ -62,6 +64,10 @@ void dumpBuffer(const char* label, uint8_t data[], int length) {
 
   ets_printf("\r\n");
 }
+
+extern const struct __sFILE_fake __sf_fake_stdin;
+extern const struct __sFILE_fake __sf_fake_stdout;
+extern const struct __sFILE_fake __sf_fake_stderr;
 
 void setDebug(int d) {
   debug = d;
@@ -177,14 +183,6 @@ void setupBluetooth() {
     vTaskDelay(portMAX_DELAY);
     if (debug)  ets_printf(".");
   }
-}
-
-unsigned long getTime() {
-  int ret = 0;
-  do {
-    ret = WiFi.getTime();
-  } while (ret == 0);
-  return ret;
 }
 
 void setupWiFi() {

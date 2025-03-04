@@ -602,6 +602,7 @@ int startServerTcp(const uint8_t command[], uint8_t response[])
   uint8_t type;
 
   if (command[2] == 3) {
+    // 3 params, no ip
     memcpy(&port, &command[4], sizeof(port));
     port = ntohs(port);
     socket = command[7];
@@ -617,13 +618,18 @@ int startServerTcp(const uint8_t command[], uint8_t response[])
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length
 
-  if (type == TCP_MODE && tcpServers[socket].begin(port)) {
-    socketTypes[socket] = TCP_MODE;
-    response[4] = 1;
+  if (type == TCP_MODE) {
+    tcpServers[socket].begin(port);
+    if (tcpServers[socket]) {
+      socketTypes[socket] = TCP_MODE;
+      response[4] = 1;
+    } else {
+      response[4] = 0;
+    }
   } else if (type == UDP_MODE && udps[socket].begin(port)) {
     socketTypes[socket] = UDP_MODE;
     response[4] = 1;
-  } else if (type == UDP_MULTICAST_MODE && udps[socket].beginMulticast(ip, port)) {
+  } else if (type == UDP_MULTICAST_MODE && udps[socket].beginMulticast(IPAddress(ip), port)) {
     socketTypes[socket] = UDP_MODE;
     response[4] = 1;
   } else {

@@ -3,7 +3,10 @@ idf_component_register(SRCS
   http_client.c
   sketch.ino.cpp
   REQUIRES
-  arduino
+  bt
+  esp_http_client
+  spiffs
+  SPIS
   PRIV_INCLUDE_DIRS
   "."
   INCLUDE_DIRS

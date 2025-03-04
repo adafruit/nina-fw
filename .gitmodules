@@ -5,5 +5,5 @@
 	path = esp-idf
 	url = https://github.com/espressif/esp-idf
 [submodule "arduino-esp32"]
-	path = arduino/arduino-esp32
+	path = components/arduino-esp32
 	url = https://github.com/espressif/arduino-esp32
