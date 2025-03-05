@@ -63,7 +63,7 @@ int errno;
 // Note: following version definition line is parsed by python script. Please don't change its format (space, indent) only update its version number.
 // ADAFRUIT-CHANGE: not fixed length
 // The version number obeys semver rules. We suffix with "+adafruit" to distinguish from Arduino NINA-FW.
-const char FIRMWARE_VERSION[] = "2.0.0-rc.0+adafruit";
+const char FIRMWARE_VERSION[] = "3.0.0-rc.0+adafruit";
 
 // ADAFRUIT-CHANGE: user-supplied cert and key
 // Optional, user-defined X.509 certificate
@@ -91,21 +91,19 @@ static uint8_t _disconnectReason = WIFI_REASON_UNSPECIFIED;
 // But if this is turned back into a regular Arduino sketch, that won't work, because
 // LWIP_HOOK_IP4_INPUT is set at compile time when building esp-idf components.
 
-typedef esp_netif_recv_ret_t (*lwip_input_fn_t)(void *input_netif_handle, void *buffer, size_t len, void *eb);
-static lwip_input_fn_t _originalStaNetifInput = NULL;
-static lwip_input_fn_t _originalAPNetifInput = NULL;
-
 static esp_netif_recv_ret_t _staNetifInputHook(void *input_netif_handle, void *buffer, size_t len, void *eb)
 {
   CommandHandlerClass::onWiFiReceive();
-  return _originalStaNetifInput(input_netif_handle, buffer, len, eb);
+  return CommandHandler.originalStaNetifInput(input_netif_handle, buffer, len, eb);
 }
 
 static esp_netif_recv_ret_t _apNetifInputHook(void *input_netif_handle, void *buffer, size_t len, void *eb)
 {
   CommandHandlerClass::onWiFiReceive();
-  return _originalAPNetifInput(input_netif_handle, buffer, len, eb);
+  return CommandHandler.originalAPNetifInput(input_netif_handle, buffer, len, eb);
 }
+
+
 
 static void _setupNTP(void)
 {
@@ -118,7 +116,7 @@ static void _setupNTP(void)
 
 extern esp_netif_t *get_esp_interface_netif(esp_interface_t interface);
 
-static void _setupEventHandlers(void)
+void _setupEventHandlers(void)
 {
   // Fetch the default netif's. Interpose our own input handlers in front of their input handlers,
   // so that we can notice every time we recieve a packet.
@@ -127,13 +125,13 @@ static void _setupEventHandlers(void)
   esp_netif_t *apNetif = get_esp_interface_netif(ESP_IF_WIFI_AP);
 
   if (staNetif != NULL && staNetif->lwip_input_fn != _staNetifInputHook) {
-    _originalAPNetifInput = staNetif->lwip_input_fn;
-    staNetif->lwip_input_fn = &_staNetifInputHook;
+    CommandHandler.originalAPNetifInput = staNetif->lwip_input_fn;
+    staNetif->lwip_input_fn = _staNetifInputHook;
   }
 
   if (apNetif != NULL && apNetif->lwip_input_fn != _staNetifInputHook) {
-    _originalAPNetifInput = apNetif->lwip_input_fn;
-    apNetif->lwip_input_fn = &_apNetifInputHook;
+    CommandHandler.originalAPNetifInput = apNetif->lwip_input_fn;
+    apNetif->lwip_input_fn = _apNetifInputHook;
   }
 
   // Do some cleanup on a station disconnect.
@@ -2519,7 +2517,5 @@ void CommandHandlerClass::handleWiFiDisconnect()
     }
   }
 }
-
-
 
 CommandHandlerClass CommandHandler;

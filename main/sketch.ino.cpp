@@ -49,7 +49,7 @@
 #ifdef NINA_DEBUG
 int debug = 1;
 #else
-int debug = 0;
+int debug = 1;
 #endif
 
 uint8_t* commandBuffer;
@@ -105,18 +105,16 @@ void setupWiFi();
 void setupBluetooth();
 
 void setup() {
-  setDebug(debug);
+    Serial.begin(115200);
+    Serial.println("Serial!");
+        ets_printf("ets_printf\n");
 
+//  setDebug(debug);
+    Serial.println("Serial2!");
+    delay(1000);
   // put SWD and SWCLK pins connected to SAMD as inputs
   pinMode(15, INPUT);
   pinMode(21, INPUT);
-
-#if defined(NANO_RP2040_CONNECT)
-  pinMode(26, OUTPUT);
-  pinMode(27, OUTPUT);
-  digitalWrite(26, HIGH);
-  digitalWrite(27, HIGH);
-#endif
 
   pinMode(5, INPUT);
   if (digitalRead(5) == LOW) {
@@ -126,7 +124,9 @@ void setup() {
   } else {
     if (debug)  ets_printf("*** WIFI ON\n");
 
+    ESP_LOGI("setup", "before setupWiFi()");
     setupWiFi();
+    ESP_LOGI("setup", "after setupWiFi()");
   }
 }
 

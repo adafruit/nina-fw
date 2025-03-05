@@ -15,7 +15,7 @@ def extract_firmware_version():
 
 
 booloaderData = open("build/bootloader/bootloader.bin", "rb").read()
-partitionData = open("build/partitions.bin", "rb").read()
+partitionData = open("build/partition_table/partition-table.bin", "rb").read()
 #phyData = open("data/phy.bin", "rb").read()
 appData = open("build/nina-fw.bin", "rb").read()
 

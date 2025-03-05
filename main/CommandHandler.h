@@ -22,6 +22,10 @@
 
 #include <stdint.h>
 
+// include for esp_netif_recv_ret_t
+#include "lwip/esp_netif_net_stack.h"
+typedef esp_netif_recv_ret_t (*lwip_input_fn_t)(void *input_netif_handle, void *buffer, size_t len, void *eb);
+
 class CommandHandlerClass {
 public:
   CommandHandlerClass();
@@ -30,6 +34,9 @@ public:
   int handle(const uint8_t command[], uint8_t response[]);
   static void onWiFiReceive();
   static void onWiFiDisconnect(arduino_event_t*);
+
+  lwip_input_fn_t originalStaNetifInput = NULL;
+  lwip_input_fn_t originalAPNetifInput = NULL;
 
 private:
   static void gpio0Updater(void*);
