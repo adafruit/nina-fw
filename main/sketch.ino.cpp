@@ -107,11 +107,7 @@ void setupBluetooth();
 void setup() {
     Serial.begin(115200);
     Serial.println("Serial!");
-        ets_printf("ets_printf\n");
-
-//  setDebug(debug);
-    Serial.println("Serial2!");
-    delay(1000);
+//////////  setDebug(debug);
   // put SWD and SWCLK pins connected to SAMD as inputs
   pinMode(15, INPUT);
   pinMode(21, INPUT);
@@ -124,9 +120,7 @@ void setup() {
   } else {
     if (debug)  ets_printf("*** WIFI ON\n");
 
-    ESP_LOGI("setup", "before setupWiFi()");
     setupWiFi();
-    ESP_LOGI("setup", "after setupWiFi()");
   }
 }
 

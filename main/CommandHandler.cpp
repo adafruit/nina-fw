@@ -74,7 +74,8 @@ bool setCert = 0;
 char PK_BUFF[1700];
 bool setPSK = 0;
 
-IPAddress resolvedHostname;
+// IPv4 only: don't use IPAddress here.
+uint32_t resolvedHostname;
 
 #define MAX_SOCKETS CONFIG_LWIP_MAX_SOCKETS
 
@@ -126,12 +127,12 @@ void _setupEventHandlers(void)
 
   if (staNetif != NULL && staNetif->lwip_input_fn != _staNetifInputHook) {
     CommandHandler.originalAPNetifInput = staNetif->lwip_input_fn;
-    staNetif->lwip_input_fn = _staNetifInputHook;
+/////    staNetif->lwip_input_fn = _staNetifInputHook;
   }
 
   if (apNetif != NULL && apNetif->lwip_input_fn != _staNetifInputHook) {
     CommandHandler.originalAPNetifInput = apNetif->lwip_input_fn;
-    apNetif->lwip_input_fn = _apNetifInputHook;
+/////    apNetif->lwip_input_fn = _apNetifInputHook;
   }
 
   // Do some cleanup on a station disconnect.
@@ -316,7 +317,7 @@ int setDNSconfig(const uint8_t command[], uint8_t response[])
   memcpy(&dns1, &command[6], sizeof(dns1));
   memcpy(&dns2, &command[11], sizeof(dns2));
 
-  WiFi.setDNS(dns1, dns2);
+  WiFi.setDNS(IPAddress(dns1), IPAddress(dns2));
 
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length
@@ -436,7 +437,7 @@ int getTemperature(const uint8_t command[], uint8_t response[])
 
 int getDNSconfig(const uint8_t command[], uint8_t response[])
 {
-  uint32_t dnsip0 = WiFi.dnsIP();
+  uint32_t dnsip0 = WiFi.dnsIP(0);
   uint32_t dnsip1 = WiFi.dnsIP(1);
 
   response[2] = 2; // number of parameters
@@ -473,9 +474,9 @@ int getConnStatus(const uint8_t command[], uint8_t response[])
 
 int getIPaddr(const uint8_t command[], uint8_t response[])
 {
-  /*IPAddress*/uint32_t ip = WiFi.localIP();
-  /*IPAddress*/uint32_t mask = WiFi.subnetMask();
-  /*IPAddress*/uint32_t gwip = WiFi.gatewayIP();
+  uint32_t ip = WiFi.localIP();
+  uint32_t mask = WiFi.subnetMask();
+  uint32_t gwip = WiFi.gatewayIP();
 
   response[2] = 3; // number of parameters
 
@@ -779,6 +780,7 @@ int startClientTcp(const uint8_t command[], uint8_t response[])
 
   memset(host, 0x00, sizeof(host));
 
+  // Could have 4 or 5 arguments.
   if (command[2] == 4) {
     memcpy(&ip, &command[4], sizeof(ip));
     memcpy(&port, &command[9], sizeof(port));
@@ -955,8 +957,10 @@ int reqHostByName(const uint8_t command[], uint8_t response[])
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length
 
-  resolvedHostname = IPAddress(255, 255, 255, 255);
-  if (WiFi.hostByName(host, resolvedHostname)) {
+  IPAddress ip_address;
+  if (WiFi.hostByName(host, ip_address)) {
+    // cast to uint_32.
+    resolvedHostname = ip_address;
     response[4] = 1;
   } else {
     response[4] = 0;

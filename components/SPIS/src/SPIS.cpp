@@ -113,4 +113,24 @@ void SPISClass::handleSetupComplete()
 }
 
 // ADAFRUIT-CHANGE: different pin
-SPISClass SPIS(VSPI_HOST, 1, 14, 23, 18, 5, 33);
+#ifdef CONFIG_IDF_TARGET_ESP32
+SPISClass SPIS(VSPI_HOST,
+               1,  // dmaChannel
+               14, // mosiPin
+               23, // misoPin
+               18, // sclkPin
+               5,  // csPin
+               33  // readyPin
+    );
+#endif
+#ifdef CONFIG_IDF_TARGET_ESP32C6
+// Temporary choices for Feather ESP32-C6
+SPISClass SPIS(VSPI_HOST,
+               1,  // dmaChannel
+               22, // mosiPin: labeled pins
+               23, // misoPin
+               21, // sclkPin
+               5,  // csPin: same as AirLift
+               6   // readyPin: mnemonic: 3+3 (33 on AirLift)
+    );
+#endif
