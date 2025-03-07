@@ -1,4 +1,6 @@
 build/
 *.bin
+# Regenerate sdkconfig from the sdkconfig.defaults* files.
+sdkconfig
 sdkconfig.old
 managed_components/
