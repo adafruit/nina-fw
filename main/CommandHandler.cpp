@@ -419,13 +419,21 @@ int setDebug(const uint8_t command[], uint8_t response[])
   return 6;
 }
 
+#ifdef CONFIG_IDF_TARGET_ESP32
 extern "C" {
   uint8_t temprature_sens_read();
 }
+#endif
 
 int getTemperature(const uint8_t command[], uint8_t response[])
 {
+#if defined(CONFIG_IDF_TARGET_ESP32)
   float temperature = (temprature_sens_read() - 32) / 1.8;
+#elif SOC_TEMP_SENSOR_SUPPORTED
+  float temperature = temperatureRead();
+#else
+  #error "Temperature sensor not supported on this platform"
+#endif
 
   response[2] = 1; // number of parameters
   response[3] = sizeof(temperature); // parameter 1 length
