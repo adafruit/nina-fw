@@ -20,9 +20,7 @@
 #include <rom/uart.h>
 
 // Equivalent to #include "esp_log.h" when using Arduino.
-#ifdef ARDUINO_ARCH_ESP32
 #include "esp32-hal-log.h"
-#endif
 
 #include "esp_private/periph_ctrl.h"
 #include "driver/gpio.h"
@@ -44,18 +42,29 @@
 
 #include "CommandHandler.h"
 
+// ADAFRUIT-CHANGE: AirLift conditionalization
+#define AIRLIFT 1
+
 #define SPI_BUFFER_LEN SPI_MAX_DMA_LEN
 
-#ifdef NINA_DEBUG
+// Initial debug value is set by CMake build type
+#ifdef CMAKE_BUILD_TYPE_DEBUG
 int debug = 1;
 #else
-int debug = 1;
+int debug = 0;
 #endif
+
+#define NINA_PRINTF(...) do { if (debug) { log_i(__VA_ARGS__); } } while (0)
 
 uint8_t* commandBuffer;
 uint8_t* responseBuffer;
 
 void dumpBuffer(const char* label, uint8_t data[], int length) {
+  if (debug) {
+    log_i("%s: ", label);
+    log_buf_i(data, length);
+  }
+#if 0
   ets_printf("%s: ", label);
 
   for (int i = 0; i < length; i++) {
@@ -63,15 +72,13 @@ void dumpBuffer(const char* label, uint8_t data[], int length) {
   }
 
   ets_printf("\r\n");
+#endif
 }
-
-extern const struct __sFILE_fake __sf_fake_stdin;
-extern const struct __sFILE_fake __sf_fake_stdout;
-extern const struct __sFILE_fake __sf_fake_stderr;
 
 void setDebug(int d) {
   debug = d;
 
+#if 0
   if (debug) {
     PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[1], 0);
     PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[3], 0);
@@ -99,41 +106,33 @@ void setDebug(int d) {
     ets_install_putc1(NULL);
     ets_install_putc2(NULL);
   }
+#endif
 }
 
 void setupWiFi();
 void setupBluetooth();
 
 void setup() {
-    Serial.begin(115200);
-    Serial.println("Serial!");
-//////////  setDebug(debug);
+  setDebug(debug);
+
   // put SWD and SWCLK pins connected to SAMD as inputs
   pinMode(15, INPUT);
   pinMode(21, INPUT);
 
   pinMode(5, INPUT);
   if (digitalRead(5) == LOW) {
-    if (debug) ets_printf("*** BLUETOOTH ON\n");
-
     setupBluetooth();
   } else {
-    if (debug)  ets_printf("*** WIFI ON\n");
-
     setupWiFi();
   }
 }
 
-// ADAFRUIT-CHANGE: AirLift conditionalization
-#define AIRLIFT 1
-
 void setupBluetooth() {
-  if (debug)  ets_printf("setup periph\n");
+#ifdef CONFIG_IDF_TARGET_ESP32
+  NINA_PRINTF("*** BLUETOOTH");
 
   periph_module_enable(PERIPH_UART1_MODULE);
   periph_module_enable(PERIPH_UHCI0_MODULE);
-
-  if (debug)  ets_printf("setup pins\n");
 
 #if defined(AIRLIFT)
   // TX GPIO1 & RX GPIO3 on ESP32 'hardware' UART
@@ -150,8 +149,6 @@ void setupBluetooth() {
 #endif
   uart_set_hw_flow_ctrl(UART_NUM_1, UART_HW_FLOWCTRL_CTS_RTS, 5);
 
-  if (debug)  ets_printf("setup controller\n");
-
   esp_bt_controller_config_t btControllerConfig = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
 
   btControllerConfig.hci_uart_no = UART_NUM_1;
@@ -165,7 +162,6 @@ void setupBluetooth() {
 
   esp_bt_controller_init(&btControllerConfig);
   while (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_IDLE) {
-     if (debug)  ets_printf("idle\n");
   }
   esp_bt_controller_enable(ESP_BT_MODE_BLE);
   esp_bt_sleep_enable();
@@ -175,13 +171,13 @@ void setupBluetooth() {
   // Don't exit. We don't need loop() to run.
   while (1) {
     vTaskDelay(portMAX_DELAY);
-    if (debug)  ets_printf(".");
   }
+#endif
 }
 
 void setupWiFi() {
+  NINA_PRINTF("*** WIFI ON");
   esp_bt_controller_mem_release(ESP_BT_MODE_BTDM);
-  if (debug)  ets_printf("*** SPIS\n");
   SPIS.begin();
 
   esp_vfs_spiffs_conf_t conf = {
@@ -191,34 +187,30 @@ void setupWiFi() {
     .format_if_mount_failed = true
   };
 
-  // report error?
-  esp_vfs_spiffs_register(&conf);
+  esp_err_t ret = esp_vfs_spiffs_register(&conf);
+  (void) ret;
 
   if (WiFi.status() == WL_NO_SHIELD) {
-    if (debug)  ets_printf("*** NOSHIELD\n");
+    NINA_PRINTF("*** NOSHIELD");
     while (1); // no shield
   }
 
   commandBuffer = (uint8_t*)heap_caps_malloc(SPI_BUFFER_LEN, MALLOC_CAP_DMA);
   responseBuffer = (uint8_t*)heap_caps_malloc(SPI_BUFFER_LEN, MALLOC_CAP_DMA);
 
-  if (debug)  ets_printf("*** BEGIN\n");
+  NINA_PRINTF("*** BEGIN");
   CommandHandler.begin();
 }
 
 void loop() {
-  if (debug)  ets_printf(".");
   // wait for a command
   memset(commandBuffer, 0x00, SPI_BUFFER_LEN);
   int commandLength = SPIS.transfer(NULL, commandBuffer, SPI_BUFFER_LEN);
-  if (debug)  ets_printf("%d", commandLength);
+  NINA_PRINTF("%d", commandLength);
   if (commandLength == 0) {
     return;
   }
-
-  if (debug) {
-    dumpBuffer("COMMAND", commandBuffer, commandLength);
-  }
+  dumpBuffer("COMMAND", commandBuffer, commandLength);
 
   // process
   memset(responseBuffer, 0x00, SPI_BUFFER_LEN);
@@ -226,7 +218,5 @@ void loop() {
 
   SPIS.transfer(responseBuffer, NULL, responseLength);
 
-  if (debug) {
-    dumpBuffer("RESPONSE", responseBuffer, responseLength);
-  }
+  dumpBuffer("RESPONSE", responseBuffer, responseLength);
 }

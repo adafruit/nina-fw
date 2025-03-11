@@ -4,4 +4,4 @@ build/
 sdkconfig.esp32
 sdkconfig.esp32c6
 sdkconfig.old
-
+managed_components/

@@ -1490,7 +1490,7 @@ int wpa2EntEnable(const uint8_t command[], uint8_t response[]) {
 }
 
 int setClientCert(const uint8_t command[], uint8_t response[]){
-  ets_printf("*** Called setClientCert\n");
+  log_d("*** Called setClientCert\n");
 
   memset(CERT_BUF, 0x00, sizeof(CERT_BUF));
   memcpy(CERT_BUF, &command[4], sizeof(CERT_BUF));
@@ -1505,7 +1505,7 @@ int setClientCert(const uint8_t command[], uint8_t response[]){
 }
 
 int setCertKey(const uint8_t command[], uint8_t response[]){
-  ets_printf("*** Called setCertKey\n");
+  log_d("*** Called setCertKey\n");
 
   memset(PK_BUFF, 0x00, sizeof(PK_BUFF));
   memcpy(PK_BUFF, &command[4], sizeof(PK_BUFF));
