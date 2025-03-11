@@ -13,50 +13,52 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
+env:
+  IDF_VERSION: v5.3.2
+
 jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        config:
-          - 'release'
-          - 'debug'
+        esp_target:
+          - 'esp32'
+          - 'esp32c6'
+        #config:
+        #  - 'release'
+        #  - 'debug'
     steps:
-    - name: Setup Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.x'
-
     - name: Pull ESP-IDF docker
-      run: docker pull espressif/idf:v3.3.1
+      run: docker pull espressif/idf:$IDF_VERSION
 
     - name: Checkout
       uses: actions/checkout@v4
 
     - name: Checkout submodules
-      run: git submodule update --init --depth 1 certificates
+      run: git submodule update --init --depth 1 certificates components/arduino-esp32
 
     - name: Build
-      if: matrix.config == 'release'
-      run: docker run --rm -v $PWD:/project -w /project espressif/idf:v3.3.1 make firmware
-
-    - name: Build for Debug
-      if: matrix.config == 'debug'
       run: |
-        docker run --rm -v $PWD:/project -w /project espressif/idf:v3.3.1 make NINA_DEBUG=1 firmware
-        mv NINA_W102*.bin "$(echo NINA_W102*.bin | sed 's/.bin/_debug.bin/')"
+        docker run --rm -v $PWD:/project -w /project espressif/idf:$IDF_VERSION cmake -B build -G Ninja -DIDF_TARGET=${{ matrix.esp_target }}
+        docker run --rm -v $PWD:/project -w /project espressif/idf:$IDF_VERSION cmake --build build
 
-    - name: Upload Artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: NINA_W102-${{ matrix.config }}-${{ github.sha }}
-        path: |
-          NINA_W102*.bin
+#    - name: Build for Debug
+#      if: matrix.config == 'debug'
+#      run: |
+#        docker run --rm -v $PWD:/project -w /project espressif/idf:v3.3.1 make NINA_DEBUG=1 firmware
+#        mv NINA_W102*.bin "$(echo NINA_W102*.bin | sed 's/.bin/_debug.bin/')"
 
-    - name: Upload Release Asset
-      uses: softprops/action-gh-release@v1
-      if: github.event_name == 'release' && matrix.config == 'release'
-      with:
-        files: |
-          NINA_W102*.bin
+#    - name: Upload Artifacts
+#      uses: actions/upload-artifact@v4
+#      with:
+#        name: NINA_W102-${{ matrix.config }}-${{ github.sha }}
+#        path: |
+#          NINA_W102*.bin
+#
+#    - name: Upload Release Asset
+#      uses: softprops/action-gh-release@v1
+#      if: github.event_name == 'release' && matrix.config == 'release'
+#      with:
+#        files: |
+#          NINA_W102*.bin
