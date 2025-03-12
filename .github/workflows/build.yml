@@ -25,9 +25,9 @@ jobs:
         esp_target:
           - 'esp32'
           - 'esp32c6'
-        #config:
-        #  - 'release'
-        #  - 'debug'
+        build_type:
+          - 'Release'
+          - 'Debug'
     steps:
     - name: Pull ESP-IDF docker
       run: docker pull espressif/idf:$IDF_VERSION
@@ -40,25 +40,24 @@ jobs:
 
     - name: Build
       run: |
-        docker run --rm -v $PWD:/project -w /project espressif/idf:$IDF_VERSION cmake -B build -G Ninja -DIDF_TARGET=${{ matrix.esp_target }}
+        docker run --rm -v $PWD:/project -w /project espressif/idf:$IDF_VERSION cmake -B build -G Ninja -DIDF_TARGET=${{ matrix.esp_target }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
         docker run --rm -v $PWD:/project -w /project espressif/idf:$IDF_VERSION cmake --build build
 
-#    - name: Build for Debug
-#      if: matrix.config == 'debug'
-#      run: |
-#        docker run --rm -v $PWD:/project -w /project espressif/idf:v3.3.1 make NINA_DEBUG=1 firmware
-#        mv NINA_W102*.bin "$(echo NINA_W102*.bin | sed 's/.bin/_debug.bin/')"
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        #name: nina-fw-${{ matrix.esp_target }}${{ matrix.build_type == 'Debug' && format('-{0}', matrix.build_type) || '' }}
+        name: nina-fw-${{ matrix.esp_target }}-${{ matrix.build_type }}
+        path: |
+          build/nina-fw.bin
 
-#    - name: Upload Artifacts
-#      uses: actions/upload-artifact@v4
-#      with:
-#        name: NINA_W102-${{ matrix.config }}-${{ github.sha }}
-#        path: |
-#          NINA_W102*.bin
-#
-#    - name: Upload Release Asset
-#      uses: softprops/action-gh-release@v1
-#      if: github.event_name == 'release' && matrix.config == 'release'
-#      with:
-#        files: |
-#          NINA_W102*.bin
+    - name: Prepare Release Asset
+      if: github.event_name == 'release'
+      run: cp build/nina-fw.bin nina-fw-${{ matrix.esp_target }}-${{ github.event.release.tag_name }}-${{ matrix.build_type }}.bin
+
+    - name: Upload Release Asset
+      uses: softprops/action-gh-release@v1
+      if: github.event_name == 'release'
+      with:
+        files: |
+          nina-fw-*.bin
