@@ -176,7 +176,7 @@ void setupBluetooth() {
 }
 
 void setupWiFi() {
-  NINA_PRINTF("*** WIFI ON");
+  NINA_PRINTF("WIFI ON");
   esp_bt_controller_mem_release(ESP_BT_MODE_BTDM);
   SPIS.begin();
 
@@ -198,7 +198,7 @@ void setupWiFi() {
   commandBuffer = (uint8_t*)heap_caps_malloc(SPI_BUFFER_LEN, MALLOC_CAP_DMA);
   responseBuffer = (uint8_t*)heap_caps_malloc(SPI_BUFFER_LEN, MALLOC_CAP_DMA);
 
-  NINA_PRINTF("*** BEGIN");
+  NINA_PRINTF("CommandHandler Begin");
   CommandHandler.begin();
 }
 

@@ -121,16 +121,17 @@ SPISClass SPIS(VSPI_HOST,
                18, // sclkPin
                5,  // csPin
                33  // readyPin
-    );
+);
 
 #elif defined(CONFIG_IDF_TARGET_ESP32C6)
 // Temporary choices for Feather ESP32-C6
 SPISClass SPIS(SPI2_HOST,
-               1,  // dmaChannel
-               22, //12, // mosiPin: labeled pins
-               23, //13, // misoPin
-               21, //15, // sclkPin
-               5,  // csPin: same as AirLift
-               6   // readyPin: mnemonic: 3+3 (33 on AirLift)
-    );
+               SPI_DMA_CH_AUTO,
+               22, // mosiPin
+               23, // misoPin
+               21, // sclkPin
+               5,  // csPin
+               6  // readyPin
+);
+
 #endif

@@ -2413,7 +2413,8 @@ void CommandHandlerClass::begin()
 
   _updateGpio0PinSemaphore = xSemaphoreCreateCounting(2, 0);
 
-  xTaskCreatePinnedToCore(CommandHandlerClass::gpio0Updater, "gpio0Updater", 8192, NULL, 1, NULL, 1);
+  xTaskCreatePinnedToCore(CommandHandlerClass::gpio0Updater, "gpio0Updater", 8192, NULL, 1, NULL,
+    CONFIG_FREERTOS_NUMBER_OF_CORES-1);
 }
 
 #define UDIV_UP(a, b) (((a) + (b) - 1) / (b))
