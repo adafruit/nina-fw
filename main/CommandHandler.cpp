@@ -85,6 +85,13 @@ NetworkUDP udps[MAX_SOCKETS];
 NetworkServer tcpServers[MAX_SOCKETS];
 NetworkClientSecure tlsClients[MAX_SOCKETS];
 
+// Root certificate bundle provided by ESP-IDF. This available by default via ESP-iDF esp_crt_bundle_attach(),
+// but arduino-esp32 doesn't provide a way to invoke that default easily, so we declare these to use
+// the default bundle explicitly.
+extern const uint8_t x509_crt_imported_bundle_bin_start[] asm("_binary_x509_crt_bundle_start");
+extern const uint8_t x509_crt_imported_bundle_bin_end[]   asm("_binary_x509_crt_bundle_end");
+
+
 // Reasons for STA disconnect.
 static uint8_t _disconnectReason = WIFI_REASON_UNSPECIFIED;
 
@@ -854,6 +861,10 @@ int startClientTcp(const uint8_t command[], uint8_t response[])
     if (setCert && setPSK) {
       tlsClients[socket].setCertificate(CERT_BUF);
       tlsClients[socket].setPrivateKey(PK_BUFF);
+    } else {
+      // Use default certificate bundle and pass its size, as required.
+      tlsClients[socket].setCACertBundle(x509_crt_imported_bundle_bin_start,
+                                         x509_crt_imported_bundle_bin_end - x509_crt_imported_bundle_bin_start);
     }
     if (host[0] != '\0') {
       result = tlsClients[socket].connect(host, port);
