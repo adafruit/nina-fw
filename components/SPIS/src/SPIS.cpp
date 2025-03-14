@@ -114,6 +114,7 @@ void SPISClass::handleSetupComplete()
 
 // ADAFRUIT-CHANGE: different pin
 #if defined(CONFIG_IDF_TARGET_ESP32)
+// SPISClass SPIS(VSPI_HOST, 1, 12, 23, 18, 5, 33); // Arduino's original
 SPISClass SPIS(VSPI_HOST,
                1,  // dmaChannel
                14, // mosiPin
