@@ -3,5 +3,6 @@ build/
 # Regenerate sdkconfig from the sdkconfig.defaults* files.
 sdkconfig.esp32
 sdkconfig.esp32c6
+sdkconfig.*.old
 sdkconfig.old
 managed_components/
