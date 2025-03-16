@@ -977,7 +977,7 @@ int reqHostByName(const uint8_t command[], uint8_t response[])
   response[3] = 1; // parameter 1 length
 
   IPAddress ip_address;
-  if (WiFi.hostByName(host, ip_address)) {
+  if (WiFi.hostByName(host, ip_address) == 1) {
     // cast to uint_32.
     resolvedHostname = ip_address;
     response[4] = 1;
