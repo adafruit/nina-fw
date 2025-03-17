@@ -842,7 +842,7 @@ int startClientTcp(const uint8_t command[], uint8_t response[])
       result = udps[socket].beginPacket(ip, port);
     }
 
-    if (result) {
+    if (result == 1) {
       socketTypes[socket] = UDP_MODE;
 
       response[2] = 1; // number of parameters
