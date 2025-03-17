@@ -20,7 +20,7 @@
 #include <rom/uart.h>
 
 // Equivalent to #include "esp_log.h" when using Arduino.
-#include "esp32-hal-log.h"
+// #include "esp32-hal-log.h"
 
 #include "esp_private/periph_ctrl.h"
 #include "driver/gpio.h"
@@ -42,8 +42,16 @@
 
 #include "CommandHandler.h"
 
-// ADAFRUIT-CHANGE: AirLift conditionalization
-#define AIRLIFT 1
+#define SPI_BUFFER_LEN SPI_MAX_DMA_LEN
+
+// UART debug is enabled on boot
+int debug = 1;
+
+#if defined(CONFIG_IDF_TARGET_ESP32)
+extern const struct __sFILE_fake __sf_fake_stdin;
+extern const struct __sFILE_fake __sf_fake_stdout;
+extern const struct __sFILE_fake __sf_fake_stderr;
+#endif
 
 #if defined(CONFIG_IDF_TARGET_ESP32C6)
 #ifndef CONFIG_BT_LE_HCI_INTERFACE_USE_UART
@@ -51,26 +59,20 @@
 #endif
 #endif
 
-#define SPI_BUFFER_LEN SPI_MAX_DMA_LEN
+// ADAFRUIT-CHANGE: AirLift conditionalization
+#define AIRLIFT 1
 
-// Initial debug value is set by CMake build type
-#ifdef CMAKE_BUILD_TYPE_DEBUG
-int debug = 1;
-#else
-int debug = 0;
-#endif
+#define NINA_PRINTF(...) do { if (debug) { ets_printf(__VA_ARGS__); } } while (0)
 
-#define NINA_PRINTF(...) do { if (debug) { log_i(__VA_ARGS__); } } while (0)
+// Adafruit: prevent initArduino() to release BT memory
+extern "C" bool btInUse() {
+  return true;
+}
 
 uint8_t* commandBuffer;
 uint8_t* responseBuffer;
 
 void dumpBuffer(const char* label, uint8_t data[], int length) {
-  if (debug) {
-    log_i("%s: ", label);
-    log_buf_i(data, length);
-  }
-#if 0
   ets_printf("%s: ", label);
 
   for (int i = 0; i < length; i++) {
@@ -78,13 +80,11 @@ void dumpBuffer(const char* label, uint8_t data[], int length) {
   }
 
   ets_printf("\r\n");
-#endif
 }
 
 void setDebug(int d) {
   debug = d;
 
-#if 0
   if (debug) {
     PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[1], 0);
     PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[3], 0);
@@ -99,27 +99,28 @@ void setDebug(int d) {
     // uartAttach();
     ets_install_uart_printf();
     uart_tx_switch(CONFIG_CONSOLE_UART_NUM);
-
-    ets_printf("*** DEBUG ON\n");
   } else {
     PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[1], PIN_FUNC_GPIO);
     PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[3], PIN_FUNC_GPIO);
 
+#if CONFIG_IDF_TARGET_ESP32
     _GLOBAL_REENT->_stdin  = (FILE*) &__sf_fake_stdin;
     _GLOBAL_REENT->_stdout = (FILE*) &__sf_fake_stdout;
     _GLOBAL_REENT->_stderr = (FILE*) &__sf_fake_stderr;
+#endif
 
     ets_install_putc1(NULL);
     ets_install_putc2(NULL);
   }
-#endif
 }
 
 void setupWiFi();
 void setupBluetooth();
 
 void setup() {
-  setDebug(debug);
+#ifndef CMAKE_BUILD_TYPE_DEBUG
+  setDebug(0);
+#endif
 
   // put SWD and SWCLK pins connected to SAMD as inputs
   pinMode(15, INPUT);
@@ -133,14 +134,13 @@ void setup() {
   }
 }
 
+// #define UNO_WIFI_REV2
+
 void setupBluetooth() {
-  NINA_PRINTF("*** BLUETOOTH");
+  NINA_PRINTF("*** BLUETOOTH\n");
 
   periph_module_enable(PERIPH_UART1_MODULE);
-  periph_module_reset(PERIPH_UART1_MODULE);
-
   periph_module_enable(PERIPH_UHCI0_MODULE);
-  periph_module_reset(PERIPH_UHCI0_MODULE);
 
   esp_bt_controller_config_t btControllerConfig = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
 
@@ -149,8 +149,8 @@ void setupBluetooth() {
   // TX GPIO1 & RX GPIO3 on ESP32 'hardware' UART
   // RTS on ESP_BUSY (GPIO33)
   // CTS on GPIO0 (GPIO0)
-  uart_set_pin(UART_NUM_1, 1, 3, 33, 0);
-  // uart_set_pin(UART_NUM_1, 17, 16, 33, 0);
+  // uart_set_pin(UART_NUM_1, 1, 3, 33, 0);
+  uart_set_pin(UART_NUM_1, 14, 18, 33, 0);
 #elif defined(UNO_WIFI_REV2)
   uart_set_pin(UART_NUM_1, 1, 3, 33, 0); // TX, RX, RTS, CTS
 #elif defined(NANO_RP2040_CONNECT)
@@ -162,21 +162,26 @@ void setupBluetooth() {
   uart_set_hw_flow_ctrl(UART_NUM_1, UART_HW_FLOWCTRL_CTS_RTS, 5);
 
   btControllerConfig.hci_uart_no = UART_NUM_1;
-  #if defined(AIRLIFT)
+#if defined(AIRLIFT)
   btControllerConfig.hci_uart_baudrate = 115200;
-  #elif defined(UNO_WIFI_REV2) || defined(NANO_RP2040_CONNECT)
+#elif defined(UNO_WIFI_REV2) || defined(NANO_RP2040_CONNECT)
   btControllerConfig.hci_uart_baudrate = 115200;
-  #else
+#else
   btControllerConfig.hci_uart_baudrate = 912600;
-  #endif
+#endif
 
 #elif defined(CONFIG_IDF_TARGET_ESP32C6)
   // UART is configured by CONFIG_BT_LE_HCI_UART_XYZ in sdkconfig.defaults.esp32c6
 #endif
 
-  esp_bt_controller_init(&btControllerConfig);
-  while (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_IDLE) {
+  esp_err_t ret = esp_bt_controller_init(&btControllerConfig);
+  if (ESP_OK != ret) {
+    setDebug(1);
+    NINA_PRINTF("esp_bt_controller_init failed: 0x%x\n", ret);
+    while (1) {}
   }
+
+  while (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_IDLE);
   esp_bt_controller_enable(ESP_BT_MODE_BLE);
 
 #if defined(CONFIG_IDF_TARGET_ESP32)
@@ -185,14 +190,13 @@ void setupBluetooth() {
 
   vTaskSuspend(NULL);
 
-  // Don't exit. We don't need loop() to run.
   while (1) {
     vTaskDelay(portMAX_DELAY);
   }
 }
 
 void setupWiFi() {
-  NINA_PRINTF("WIFI ON");
+  NINA_PRINTF("WIFI ON\n");
   esp_bt_controller_mem_release(ESP_BT_MODE_BTDM);
   SPIS.begin();
 
@@ -207,14 +211,17 @@ void setupWiFi() {
   (void) ret;
 
   if (WiFi.status() == WL_NO_SHIELD) {
-    NINA_PRINTF("*** NOSHIELD");
+    if (!debug) {
+      setDebug(1);
+    }
+    NINA_PRINTF("*** NOSHIELD\n");
     while (1); // no shield
   }
 
   commandBuffer = (uint8_t*)heap_caps_malloc(SPI_BUFFER_LEN, MALLOC_CAP_DMA);
   responseBuffer = (uint8_t*)heap_caps_malloc(SPI_BUFFER_LEN, MALLOC_CAP_DMA);
 
-  NINA_PRINTF("CommandHandler Begin");
+  NINA_PRINTF("*** CommandHandler Begin\n");
   CommandHandler.begin();
 }
 
@@ -222,11 +229,14 @@ void loop() {
   // wait for a command
   memset(commandBuffer, 0x00, SPI_BUFFER_LEN);
   int commandLength = SPIS.transfer(NULL, commandBuffer, SPI_BUFFER_LEN);
-  NINA_PRINTF("%d", commandLength);
+
   if (commandLength == 0) {
     return;
   }
-  dumpBuffer("COMMAND", commandBuffer, commandLength);
+
+  if (debug) {
+    dumpBuffer("COMMAND", commandBuffer, commandLength);
+  }
 
   // process
   memset(responseBuffer, 0x00, SPI_BUFFER_LEN);
@@ -234,5 +244,7 @@ void loop() {
 
   SPIS.transfer(responseBuffer, NULL, responseLength);
 
-  dumpBuffer("RESPONSE", responseBuffer, responseLength);
+  if (debug) {
+    dumpBuffer("RESPONSE", responseBuffer, responseLength);
+  }
 }
