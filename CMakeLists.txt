@@ -16,4 +16,10 @@ if (CMAKE_BUILD_TYPE STREQUAL "Debug")
   add_compile_definitions(CMAKE_BUILD_TYPE_DEBUG)
 endif ()
 
+# caused by esp-idf/components/bt/controller/esp32c6/bt.c:253:11: In function 'esp_bt_controller_log_init':
+# error: 'task_create' may be used uninitialized [-Werror=maybe-uninitialized]
+if (IDF_TARGET STREQUAL "esp32c6")
+  add_compile_options(-Wno-maybe-uninitialized)
+endif ()
+
 project(nina-fw)

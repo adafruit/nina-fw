@@ -19,21 +19,22 @@
 
 #include <rom/uart.h>
 
-// Equivalent to #include "esp_log.h" when using Arduino.
-// #include "esp32-hal-log.h"
+extern "C" {
+  #include "esp_private/periph_ctrl.h"
+  #include "soc/gpio_periph.h"
+  #include "soc/periph_defs.h"
+  // #include <driver/periph_ctrl.h>
 
-#include "esp_private/periph_ctrl.h"
-#include "driver/gpio.h"
-#include "driver/uart.h"
-#include "esp_bt.h"
-#include "soc/gpio_periph.h"
-#include "soc/periph_defs.h"
+  #include <driver/uart.h>
+  #include <esp_bt.h>
 
-#include "esp_spiffs.h"
-#include <stdio.h>
-#include <sys/types.h>
-#include <dirent.h>
-#include "esp_partition.h"
+  #include "esp_spiffs.h"
+  #include "esp_log.h"
+  #include <stdio.h>
+  #include <sys/types.h>
+  #include <dirent.h>
+  #include "esp_partition.h"
+}
 
 #include <Arduino.h>
 
@@ -50,7 +51,7 @@ int debug = 1;
 //--------------------------------------------------------------------
 // ADAFRUIT CHANGE
 //--------------------------------------------------------------------
-#define AIRLIFT 1
+#define AIRLIFT 1 // Adafruit Airlift
 #define NINA_PRINTF(...) do { if (debug) { ets_printf(__VA_ARGS__); } } while (0)
 
 #if defined(CONFIG_IDF_TARGET_ESP32)
