@@ -112,27 +112,5 @@ void SPISClass::handleSetupComplete()
   xSemaphoreGiveFromISR(_readySemaphore, NULL);
 }
 
-// ADAFRUIT-CHANGE: different pin
-#if defined(CONFIG_IDF_TARGET_ESP32)
-// SPISClass SPIS(VSPI_HOST, 1, 12, 23, 18, 5, 33); // Arduino's original
-SPISClass SPIS(VSPI_HOST,
-               1,  // dmaChannel
-               14, // mosiPin
-               23, // misoPin
-               18, // sclkPin
-               5,  // csPin
-               33  // readyPin
-);
-
-#elif defined(CONFIG_IDF_TARGET_ESP32C6)
-// Temporary choices for Feather ESP32-C6
-SPISClass SPIS(SPI2_HOST,
-               SPI_DMA_CH_AUTO,
-               22, // mosiPin
-               23, // misoPin
-               21, // sclkPin
-               5,  // csPin
-               6  // readyPin
-);
-
-#endif
+// Move definition to sketch.ino.cpp
+// SPISClass SPIS(VSPI_HOST, 1, 12, 23, 18, 5, 33);

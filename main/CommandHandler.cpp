@@ -2412,7 +2412,13 @@ CommandHandlerClass::CommandHandlerClass()
 {
 }
 
+#if defined(CONFIG_IDF_TARGET_ESP32)
 static const int GPIO_IRQ = 0;
+#endif
+
+#if defined(CONFIG_IDF_TARGET_ESP32C6)
+static const int GPIO_IRQ = 9;
+#endif
 
 void CommandHandlerClass::begin()
 {

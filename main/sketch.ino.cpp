@@ -47,28 +47,70 @@
 // UART debug is enabled on boot
 int debug = 1;
 
+//--------------------------------------------------------------------
+// ADAFRUIT CHANGE
+//--------------------------------------------------------------------
+#define AIRLIFT 1
+#define NINA_PRINTF(...) do { if (debug) { ets_printf(__VA_ARGS__); } } while (0)
+
 #if defined(CONFIG_IDF_TARGET_ESP32)
+// SPIS for WiFi
+#define AIRLIFT_MOSI  14
+#define AIRLIFT_MISO  23
+#define AIRLIFT_SCK   18
+#define AIRLIFT_CS    5
+#define AIRLIFT_BUSY  33 // ready
+
+// UART for BLE HCI
+#define AIRLIFT_RTS   AIRLIFT_BUSY
+#define AIRLIFT_CTS   0 // BOOT PIN
+
+// #define CONFIG_BT_LE_HCI_UART_RTS_PIN 33 // ESP_BUSY (ready)
+// #define CONFIG_BT_LE_HCI_UART_CTS_PIN 0  // GPIO0
+
 extern const struct __sFILE_fake __sf_fake_stdin;
 extern const struct __sFILE_fake __sf_fake_stdout;
 extern const struct __sFILE_fake __sf_fake_stderr;
+
+// dev, dma, mosi, miso, sclk, cs, ready
+SPISClass SPIS(VSPI_HOST, 1, AIRLIFT_MOSI, AIRLIFT_MISO, AIRLIFT_SCK, AIRLIFT_CS, AIRLIFT_BUSY);
 #endif
 
 #if defined(CONFIG_IDF_TARGET_ESP32C6)
+// SPIS for WiFi
+#define AIRLIFT_MOSI  21
+#define AIRLIFT_MISO  6
+#define AIRLIFT_SCK   22
+#define AIRLIFT_CS    7
+#define AIRLIFT_BUSY  18 // ready
+
+// UART for BLE HCI
+// CONFIG_BT_LE_HCI_UART_RTS_PIN and CONFIG_BT_LE_HCI_UART_CTS_PIN are defined in sdkconfig.defaults.esp32c6
+// and used by hci_driver_uart_config() in hci_driver_uart.c. It should matches with BUSY and BOOT pins.
 #ifndef CONFIG_BT_LE_HCI_INTERFACE_USE_UART
 #error "Please Enable Uart for HCI"
 #endif
+
+#if CONFIG_BT_LE_HCI_UART_RTS_PIN != AIRLIFT_BUSY
+#error "RTS pin must be the same as ready pin"
 #endif
 
-// ADAFRUIT-CHANGE: AirLift conditionalization
-#define AIRLIFT 1
+#if CONFIG_BT_LE_HCI_UART_CTS_PIN != 9
+#error "CTS pin must be the same as BOOT pin"
+#endif
 
-#define NINA_PRINTF(...) do { if (debug) { ets_printf(__VA_ARGS__); } } while (0)
+// dev, dma, mosi, miso, sclk, cs, ready
+SPISClass SPIS(SPI2_HOST, SPI_DMA_CH_AUTO, AIRLIFT_MOSI, AIRLIFT_MISO, AIRLIFT_SCK, AIRLIFT_CS, AIRLIFT_BUSY);
+#endif
 
-// Adafruit: prevent initArduino() to release BT memory
+// prevent initArduino() to release BT memory
 extern "C" bool btInUse() {
   return true;
 }
 
+//--------------------------------------------------------------------
+//
+//--------------------------------------------------------------------
 uint8_t* commandBuffer;
 uint8_t* responseBuffer;
 
@@ -122,12 +164,14 @@ void setup() {
   setDebug(0);
 #endif
 
+#if !AIRLIFT
   // put SWD and SWCLK pins connected to SAMD as inputs
   pinMode(15, INPUT);
   pinMode(21, INPUT);
+#endif
 
-  pinMode(5, INPUT);
-  if (digitalRead(5) == LOW) {
+  pinMode(AIRLIFT_CS, INPUT);
+  if (digitalRead(AIRLIFT_CS) == LOW) {
     setupBluetooth();
   } else {
     setupWiFi();
@@ -149,8 +193,7 @@ void setupBluetooth() {
   // TX GPIO1 & RX GPIO3 on ESP32 'hardware' UART
   // RTS on ESP_BUSY (GPIO33)
   // CTS on GPIO0 (GPIO0)
-  // uart_set_pin(UART_NUM_1, 1, 3, 33, 0);
-  uart_set_pin(UART_NUM_1, 14, 18, 33, 0);
+  uart_set_pin(UART_NUM_1, 1, 3, AIRLIFT_RTS, AIRLIFT_CTS);
 #elif defined(UNO_WIFI_REV2)
   uart_set_pin(UART_NUM_1, 1, 3, 33, 0); // TX, RX, RTS, CTS
 #elif defined(NANO_RP2040_CONNECT)
