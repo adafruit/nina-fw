@@ -42,22 +42,27 @@ jobs:
       run: |
         docker run --rm -v $PWD:/project -w /project espressif/idf:$IDF_VERSION cmake -B build -G Ninja -DIDF_TARGET=${{ matrix.esp_target }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
         docker run --rm -v $PWD:/project -w /project espressif/idf:$IDF_VERSION cmake --build build
+        python combine.py
+        if [ "${{ matrix.build_type }}" == "Debug" ]; then
+          # add debug suffix to the bin file
+          mv NINA_ADAFRUIT*.bin "$(echo NINA_ADAFRUIT*.bin | sed 's/.bin/_Debug.bin/')"
+        fi
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
         #name: nina-fw-${{ matrix.esp_target }}${{ matrix.build_type == 'Debug' && format('-{0}', matrix.build_type) || '' }}
-        name: nina-fw-${{ matrix.esp_target }}-${{ matrix.build_type }}
+        name: NINA_ADAFRUIT-${{ matrix.esp_target }}-${{ matrix.build_type }}
         path: |
-          build/nina-fw.bin
+          NINA_ADAFRUIT*.bin
 
-    - name: Prepare Release Asset
-      if: github.event_name == 'release'
-      run: cp build/nina-fw.bin nina-fw-${{ matrix.esp_target }}-${{ github.event.release.tag_name }}-${{ matrix.build_type }}.bin
+#    - name: Prepare Release Asset
+#      if: github.event_name == 'release'
+#      run: cp build/nina-fw.bin nina-fw-${{ matrix.esp_target }}-${{ github.event.release.tag_name }}-${{ matrix.build_type }}.bin
 
     - name: Upload Release Asset
       uses: softprops/action-gh-release@v1
       if: github.event_name == 'release'
       with:
         files: |
-          nina-fw-*.bin
+          NINA_ADAFRUIT*.bin

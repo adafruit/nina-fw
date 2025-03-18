@@ -76,7 +76,7 @@ for i in range(0, len(appData)):
     outputData[0x30000 + i] = appData[i]
 
 version = extract_firmware_version()
-outputFilename = f"NINA_ADAFRUIT-{version}.bin"
+outputFilename = f"NINA_ADAFRUIT-{target}-{version}.bin"
 if len(sys.argv) > 1:
     outputFilename = sys.argv[1]
 
