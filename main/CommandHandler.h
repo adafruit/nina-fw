@@ -35,8 +35,8 @@ public:
   static void onWiFiReceive();
   static void onWiFiDisconnect(arduino_event_t*);
 
-  lwip_input_fn_t originalStaNetifInput = NULL;
-  lwip_input_fn_t originalAPNetifInput = NULL;
+  lwip_input_fn_t staNetifInput_orig = NULL;
+  lwip_input_fn_t apNetifInput_orig = NULL;
 
 private:
   static void gpio0Updater(void*);

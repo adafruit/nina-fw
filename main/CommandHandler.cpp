@@ -85,36 +85,43 @@ NetworkUDP udps[MAX_SOCKETS];
 NetworkServer tcpServers[MAX_SOCKETS];
 NetworkClientSecure tlsClients[MAX_SOCKETS];
 
+//--------------------------------------------------------------------
+// ADAFRUIT CHANGE
+//--------------------------------------------------------------------
+
 // Root certificate bundle provided by ESP-IDF. This available by default via ESP-iDF esp_crt_bundle_attach(),
 // but arduino-esp32 doesn't provide a way to invoke that default easily, so we declare these to use
 // the default bundle explicitly.
 extern const uint8_t x509_crt_imported_bundle_bin_start[] asm("_binary_x509_crt_bundle_start");
 extern const uint8_t x509_crt_imported_bundle_bin_end[]   asm("_binary_x509_crt_bundle_end");
 
-
 // Reasons for STA disconnect.
 static uint8_t _disconnectReason = WIFI_REASON_UNSPECIFIED;
 
-// An alternative way of doing this is to use LWIP_HOOK_IP4_INPUT.
-// But if this is turned back into a regular Arduino sketch, that won't work, because
-// LWIP_HOOK_IP4_INPUT is set at compile time when building esp-idf components.
-
-static esp_netif_recv_ret_t _staNetifInputHook(void *input_netif_handle, void *buffer, size_t len, void *eb)
-{
+extern "C" {
+  static esp_netif_recv_ret_t IRAM_ATTR staNetifInput_hook(void *input_netif_handle, void *buffer, size_t len, void *eb) {
+#ifdef CONFIG_ESP_NETIF_RECEIVE_REPORT_ERRORS
+  esp_netif_recv_ret_t ret =
+#endif
+  CommandHandler.staNetifInput_orig(input_netif_handle, buffer, len, eb);
   CommandHandlerClass::onWiFiReceive();
-  return CommandHandler.originalStaNetifInput(input_netif_handle, buffer, len, eb);
+
+  return ESP_NETIF_OPTIONAL_RETURN_CODE(ret);
 }
 
-static esp_netif_recv_ret_t _apNetifInputHook(void *input_netif_handle, void *buffer, size_t len, void *eb)
-{
+static esp_netif_recv_ret_t IRAM_ATTR apNetifInput_hook(void *input_netif_handle, void *buffer, size_t len, void *eb) {
+#ifdef CONFIG_ESP_NETIF_RECEIVE_REPORT_ERRORS
+  esp_netif_recv_ret_t ret =
+#endif
+  CommandHandler.apNetifInput_orig(input_netif_handle, buffer, len, eb);
   CommandHandlerClass::onWiFiReceive();
-  return CommandHandler.originalAPNetifInput(input_netif_handle, buffer, len, eb);
+
+  return ESP_NETIF_OPTIONAL_RETURN_CODE(ret);
 }
 
+}
 
-
-static void _setupNTP(void)
-{
+static void _setupNTP(void) {
   esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
   esp_sntp_setservername(0, (char*)"0.pool.ntp.org");
   esp_sntp_setservername(1, (char*)"1.pool.ntp.org");
@@ -124,36 +131,33 @@ static void _setupNTP(void)
 
 extern esp_netif_t *get_esp_interface_netif(esp_interface_t interface);
 
-void _setupEventHandlers(void)
-{
+void _setupEventHandlers(void) {
   // Fetch the default netif's. Interpose our own input handlers in front of their input handlers,
   // so that we can notice every time we recieve a packet.
 
   esp_netif_t *staNetif = get_esp_interface_netif(ESP_IF_WIFI_STA);
   esp_netif_t *apNetif = get_esp_interface_netif(ESP_IF_WIFI_AP);
 
-  if (staNetif != NULL && staNetif->lwip_input_fn != _staNetifInputHook) {
-    CommandHandler.originalAPNetifInput = staNetif->lwip_input_fn;
-/////    staNetif->lwip_input_fn = _staNetifInputHook;
+  if (staNetif != NULL && staNetif->lwip_input_fn != staNetifInput_hook) {
+    CommandHandler.staNetifInput_orig = staNetif->lwip_input_fn;
+    staNetif->lwip_input_fn = staNetifInput_hook;
   }
 
-  if (apNetif != NULL && apNetif->lwip_input_fn != _staNetifInputHook) {
-    CommandHandler.originalAPNetifInput = apNetif->lwip_input_fn;
-/////    apNetif->lwip_input_fn = _apNetifInputHook;
+  if (apNetif != NULL && apNetif->lwip_input_fn != staNetifInput_hook) {
+    CommandHandler.apNetifInput_orig = apNetif->lwip_input_fn;
+    apNetif->lwip_input_fn = apNetifInput_hook;
   }
 
   // Do some cleanup on a station disconnect.
   WiFi.onEvent(&CommandHandlerClass::onWiFiDisconnect, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
 }
 
-static void _setupAfterWifiBegin(void)
-{
+static void _setupAfterWifiBegin(void) {
   _setupNTP();
   _setupEventHandlers();
 }
 
-static int _ping(/*IPAddress*/uint32_t host, uint8_t ttl)
-{
+static int _ping(/*IPAddress*/uint32_t host, uint8_t ttl) {
   uint32_t timeout = 5000;
 
   int s = socket(AF_INET, SOCK_RAW, IP_PROTO_ICMP);
@@ -1912,7 +1916,7 @@ ota_cleanup:
 //
 int socket_socket(const uint8_t command[], uint8_t response[])
 {
-  //[0]     CMD_START   < START_CMD   >
+  //[0]     CMD_START   < 0xE0   >
   //[1]     Command     < 1 byte >
   //[2]     N args      < 1 byte >
   //[3]     type size   < 1 byte >
@@ -1934,7 +1938,7 @@ int socket_socket(const uint8_t command[], uint8_t response[])
 
 int socket_close(const uint8_t command[], uint8_t response[])
 {
-  //[0]     CMD_START   < START_CMD   >
+  //[0]     CMD_START   < 0xE0   >
   //[1]     Command     < 1 byte >
   //[2]     N args      < 1 byte >
   //[3]     sock size   < 1 byte >
@@ -1963,7 +1967,7 @@ int socket_errno(const uint8_t command[], uint8_t response[])
 
 int socket_bind(const uint8_t command[], uint8_t response[])
 {
-  //[0]     CMD_START   < START_CMD    >
+  //[0]     CMD_START   < 0xE0    >
   //[1]     Command     < 1 byte  >
   //[2]     N args      < 1 byte  >
   //[3]     sock size   < 1 byte  >
@@ -1991,7 +1995,7 @@ int socket_bind(const uint8_t command[], uint8_t response[])
 
 int socket_listen(const uint8_t command[], uint8_t response[])
 {
-  //[0]     CMD_START    < START_CMD   >
+  //[0]     CMD_START    < 0xE0   >
   //[1]     Command      < 1 byte >
   //[2]     N args       < 1 byte >
   //[3]     sock size    < 1 byte >
@@ -2012,7 +2016,7 @@ int socket_listen(const uint8_t command[], uint8_t response[])
 
 int socket_accept(const uint8_t command[], uint8_t response[])
 {
-  //[0]     CMD_START   < START_CMD   >
+  //[0]     CMD_START   < 0xE0   >
   //[1]     Command     < 1 byte >
   //[2]     N args      < 1 byte >
   //[3]     sock size   < 1 byte >
@@ -2043,7 +2047,7 @@ int socket_accept(const uint8_t command[], uint8_t response[])
 
 int socket_connect(const uint8_t command[], uint8_t response[])
 {
-  //[0]      CMD_START  < START_CMD    >
+  //[0]      CMD_START  < 0xE0    >
   //[1]      Command    < 1 byte  >
   //[2]      N args     < 1 byte  >
   //[3]      sock size  < 1 byte  >
@@ -2074,7 +2078,7 @@ int socket_connect(const uint8_t command[], uint8_t response[])
 
 int socket_send(const uint8_t command[], uint8_t response[])
 {
-  //[0]      CMD_START  < START_CMD    >
+  //[0]      CMD_START  < 0xE0    >
   //[1]      Command    < 1 byte  >
   //[2]      N args     < 1 byte  >
   //[3..4]   sock size  < 2 bytes >
@@ -2097,7 +2101,7 @@ int socket_send(const uint8_t command[], uint8_t response[])
 
 int socket_recv(const uint8_t command[], uint8_t response[])
 {
-  //[0]      CMD_START  < START_CMD    >
+  //[0]      CMD_START  < 0xE0    >
   //[1]      Command    < 1 byte  >
   //[2]      N args     < 1 byte  >
   //[3]      sock size  < 1 byte  >
@@ -2120,7 +2124,7 @@ int socket_recv(const uint8_t command[], uint8_t response[])
 
 int socket_sendto(const uint8_t command[], uint8_t response[])
 {
-  //[0]      CMD_START  < START_CMD    >
+  //[0]      CMD_START  < 0xE0    >
   //[1]      Command    < 1 byte  >
   //[2]      N args     < 1 byte  >
   //[3..4]   sock size  < 2 bytes >
@@ -2156,7 +2160,7 @@ int socket_sendto(const uint8_t command[], uint8_t response[])
 
 int socket_recvfrom(const uint8_t command[], uint8_t response[])
 {
-  //[0]     CMD_START   < START_CMD   >
+  //[0]     CMD_START   < 0xE0   >
   //[1]     Command     < 1 byte >
   //[2]     N args      < 1 byte >
   //[3]     sock size   < 1 byte >
@@ -2194,7 +2198,7 @@ int socket_recvfrom(const uint8_t command[], uint8_t response[])
 
 int socket_ioctl(const uint8_t command[], uint8_t response[])
 {
-  //[0]     CMD_START    < START_CMD    >
+  //[0]     CMD_START    < 0xE0    >
   //[1]     Command      < 1 byte  >
   //[2]     N args       < 1 byte  >
   //[3]     sock size    < 1 byte  >
@@ -2230,7 +2234,7 @@ int socket_ioctl(const uint8_t command[], uint8_t response[])
 
 int socket_poll(const uint8_t command[], uint8_t response[])
 {
-  //[0]     CMD_START    < START_CMD   >
+  //[0]     CMD_START    < 0xE0   >
   //[1]     Command      < 1 byte >
   //[2]     N args       < 1 byte >
   //[3]     sock size    < 1 byte >
@@ -2279,7 +2283,7 @@ int socket_poll(const uint8_t command[], uint8_t response[])
 
 int socket_setsockopt(const uint8_t command[], uint8_t response[])
 {
-  //[0]     CMD_START    < START_CMD    >
+  //[0]     CMD_START    < 0xE0    >
   //[1]     Command      < 1 byte  >
   //[2]     N args       < 1 byte  >
   //[3]     sock size    < 1 byte  >
@@ -2305,7 +2309,7 @@ int socket_setsockopt(const uint8_t command[], uint8_t response[])
 
 int socket_getsockopt(const uint8_t command[], uint8_t response[])
 {
-  //[0]     CMD_START    < START_CMD    >
+  //[0]     CMD_START    < 0xE0    >
   //[1]     Command      < 1 byte  >
   //[2]     N args       < 1 byte  >
   //[3]     sock size    < 1 byte  >
@@ -2332,7 +2336,7 @@ int socket_getsockopt(const uint8_t command[], uint8_t response[])
 
 int socket_getpeername(const uint8_t command[], uint8_t response[])
 {
-  //[0]     CMD_START   < START_CMD   >
+  //[0]     CMD_START   < 0xE0   >
   //[1]     Command     < 1 byte >
   //[2]     N args      < 1 byte >
   //[3]     sock size   < 1 byte >
@@ -2518,7 +2522,11 @@ void CommandHandlerClass::onWiFiReceive()
 
 void CommandHandlerClass::handleWiFiReceive()
 {
-  xSemaphoreGiveFromISR(_updateGpio0PinSemaphore, NULL);
+  if (xPortInIsrContext()) {
+    xSemaphoreGiveFromISR(_updateGpio0PinSemaphore, NULL);
+  } else {
+    xSemaphoreGive(_updateGpio0PinSemaphore);
+  }
 }
 
 void CommandHandlerClass::onWiFiDisconnect(arduino_event_t *event)
