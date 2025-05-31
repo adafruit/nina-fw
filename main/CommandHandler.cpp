@@ -29,7 +29,7 @@
 
 #include "Arduino.h"
 
-const char FIRMWARE_VERSION[] = "2.0.3";
+const char FIRMWARE_VERSION[] = "2.0.4";
 
 // Optional, user-defined X.509 certificate
 char CERT_BUF[1300];
