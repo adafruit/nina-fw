@@ -22,9 +22,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        esp_target:
+        board:
           - 'esp32'
-          - 'esp32c6'
+          - 'fruitjam_c6'
         build_type:
           - 'Release'
           - 'Debug'
@@ -40,8 +40,7 @@ jobs:
 
     - name: Build
       run: |
-        docker run --rm -v $PWD:/project -w /project espressif/idf:$IDF_VERSION cmake -B build -G Ninja -DIDF_TARGET=${{ matrix.esp_target }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
-        docker run --rm -v $PWD:/project -w /project espressif/idf:$IDF_VERSION cmake --build build
+        docker run --rm -v $PWD:/project -w /project espressif/idf:$IDF_VERSION /bin/bash -c "git config --global --add safe.directory /project && idf.py -DBOARD=${{ matrix.board }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} build"
         python combine.py
         if [ "${{ matrix.build_type }}" == "Debug" ]; then
           # add debug suffix to the bin file
@@ -51,14 +50,14 @@ jobs:
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
-        #name: nina-fw-${{ matrix.esp_target }}${{ matrix.build_type == 'Debug' && format('-{0}', matrix.build_type) || '' }}
-        name: NINA_ADAFRUIT-${{ matrix.esp_target }}-${{ matrix.build_type }}
+        #name: nina-fw-${{ matrix.board }}${{ matrix.build_type == 'Debug' && format('-{0}', matrix.build_type) || '' }}
+        name: NINA_ADAFRUIT-${{ matrix.board }}-${{ matrix.build_type }}
         path: |
           NINA_ADAFRUIT*.bin
 
 #    - name: Prepare Release Asset
-#      if: github.event_name == 'release'
-#      run: cp build/nina-fw.bin nina-fw-${{ matrix.esp_target }}-${{ github.event.release.tag_name }}-${{ matrix.build_type }}.bin
+#      if: github.event_name == 'release' && matrix.build_type == 'Release'
+#      run: cp build/nina-fw.bin nina-fw-${{ matrix.board }}-${{ github.event.release.tag_name }}-${{ matrix.build_type }}.bin
 
     - name: Upload Release Asset
       uses: softprops/action-gh-release@v1

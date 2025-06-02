@@ -78,30 +78,33 @@ SPISClass SPIS(VSPI_HOST, 1, AIRLIFT_MOSI, AIRLIFT_MISO, AIRLIFT_SCK, AIRLIFT_CS
 #endif
 
 #if defined(CONFIG_IDF_TARGET_ESP32C6)
-// SPIS for WiFi
-#define AIRLIFT_MOSI  21
-#define AIRLIFT_MISO  6
-#define AIRLIFT_SCK   22
-#define AIRLIFT_CS    7
-#define AIRLIFT_BUSY  18 // ready
 
 // UART for BLE HCI
-// CONFIG_BT_LE_HCI_UART_RTS_PIN and CONFIG_BT_LE_HCI_UART_CTS_PIN are defined in sdkconfig.defaults.esp32c6
+// CONFIG_BT_LE_HCI_UART_RTS_PIN and CONFIG_BT_LE_HCI_UART_CTS_PIN are defined in sdkconfig.defaults.BOARD
 // and used by hci_driver_uart_config() in hci_driver_uart.c. It should matches with BUSY and BOOT pins.
 #ifndef CONFIG_BT_LE_HCI_INTERFACE_USE_UART
 #error "Please Enable Uart for HCI"
-#endif
-
-#if CONFIG_BT_LE_HCI_UART_RTS_PIN != AIRLIFT_BUSY
-#error "RTS pin must be the same as ready pin"
 #endif
 
 #if CONFIG_BT_LE_HCI_UART_CTS_PIN != 9
 #error "CTS pin must be the same as BOOT pin"
 #endif
 
+// SPIS for WiFi
+#define AIRLIFT_BUSY  CONFIG_BT_LE_HCI_UART_RTS_PIN // ready
+
+#if defined(BOARD_FRUITJAM_C6)
+  #define AIRLIFT_MOSI  21
+  #define AIRLIFT_MISO  6
+  #define AIRLIFT_SCK   22
+  #define AIRLIFT_CS    7
+#else
+  #error "Board is not supported, please add -DBOARD=<board_name> to the build command"
+#endif
+
 // dev, dma, mosi, miso, sclk, cs, ready
-SPISClass SPIS(SPI2_HOST, SPI_DMA_CH_AUTO, AIRLIFT_MOSI, AIRLIFT_MISO, AIRLIFT_SCK, AIRLIFT_CS, AIRLIFT_BUSY);
+SPISClass SPIS(SPI2_HOST, SPI_DMA_CH_AUTO,
+               AIRLIFT_MOSI, AIRLIFT_MISO, AIRLIFT_SCK, AIRLIFT_CS, AIRLIFT_BUSY);
 #endif
 
 // prevent initArduino() to release BT memory
