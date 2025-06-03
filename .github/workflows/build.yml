@@ -41,7 +41,7 @@ jobs:
     - name: Build
       run: |
         docker run --rm -v $PWD:/project -w /project espressif/idf:$IDF_VERSION /bin/bash -c "git config --global --add safe.directory /project && idf.py -DBOARD=${{ matrix.board }} -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} build"
-        python combine.py
+        # combine.py is auto run as postbuild
         if [ "${{ matrix.build_type }}" == "Debug" ]; then
           # add debug suffix to the bin file
           mv NINA_ADAFRUIT*.bin "$(echo NINA_ADAFRUIT*.bin | sed 's/.bin/_Debug.bin/')"
