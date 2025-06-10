@@ -35,6 +35,7 @@
 // ADAFRUIT-CHANGE: Adafruit-style enterprise wifi support
 #include "esp_eap_client.h"
 #include "esp_wifi.h"
+#include "esp_mac.h"
 
 #include "esp_log.h"
 #include "esp_sntp.h"
@@ -516,6 +517,13 @@ int getMACaddr(const uint8_t command[], uint8_t response[])
   uint8_t mac[6] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
   WiFi.macAddress(mac);
+
+  if (mac[0] == 0x00 && mac[1] == 0x00 && mac[2] == 0x00 &&
+      mac[3] == 0x00 && mac[4] == 0x00 && mac[5] == 0x00) {
+    // If the MAC address is all zeros, STA/AP interface is not enabled/ready.
+    // use base mac address
+    esp_base_mac_addr_get(mac);
+  }
 
   response[2] = 1; // number of parameters
   response[3] = sizeof(mac); // parameter 1 length
