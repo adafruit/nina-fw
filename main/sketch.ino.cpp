@@ -20,7 +20,10 @@
 #include <rom/uart.h>
 
 extern "C" {
-  #include <driver/periph_ctrl.h>
+  #include "esp_private/periph_ctrl.h"
+  #include "soc/gpio_periph.h"
+  #include "soc/periph_defs.h"
+  // #include <driver/periph_ctrl.h>
 
   #include <driver/uart.h>
   #include <esp_bt.h>
@@ -42,12 +45,57 @@ extern "C" {
 
 #define SPI_BUFFER_LEN SPI_MAX_DMA_LEN
 
-#ifdef NINA_DEBUG
+// UART debug is enabled on boot
 int debug = 1;
-#else
-int debug = 0;
+
+//--------------------------------------------------------------------
+// ADAFRUIT CHANGE
+//--------------------------------------------------------------------
+
+// contains SPIS and BT/BLE UART pin definitions
+#if !__has_include("board.h")
+#error "Board is not supported, please add -DBOARD=<board_name> to the build command"
 #endif
 
+#include "board.h"
+
+#define AIRLIFT 1 // Adafruit Airlift
+#define NINA_PRINTF(...) do { if (debug) { ets_printf(__VA_ARGS__); } } while (0)
+
+#if defined(CONFIG_IDF_TARGET_ESP32)
+  extern const struct __sFILE_fake __sf_fake_stdin;
+  extern const struct __sFILE_fake __sf_fake_stdout;
+  extern const struct __sFILE_fake __sf_fake_stderr;
+
+  // dev, dma, mosi, miso, sclk, cs, ready
+  SPISClass SPIS(VSPI_HOST, 1, AIRLIFT_MOSI, AIRLIFT_MISO, AIRLIFT_SCK, AIRLIFT_CS, AIRLIFT_BUSY);
+#endif
+
+#if defined(CONFIG_IDF_TARGET_ESP32C6)
+  // UART for BLE HCI
+  // CONFIG_BT_LE_HCI_UART_RTS_PIN and CONFIG_BT_LE_HCI_UART_CTS_PIN are defined in boards/{BOARD}/sdkconfig
+  // and used by hci_driver_uart_config() in hci_driver_uart.c. It should matches with BUSY and BOOT pins.
+  #ifndef CONFIG_BT_LE_HCI_INTERFACE_USE_UART
+  #error "Please Enable Uart for HCI"
+  #endif
+
+  #if CONFIG_BT_LE_HCI_UART_CTS_PIN != 9
+  #error "CTS pin must be the same as BOOT pin"
+  #endif
+
+  // dev, dma, mosi, miso, sclk, cs, ready
+  SPISClass SPIS(SPI2_HOST, SPI_DMA_CH_AUTO,
+                 AIRLIFT_MOSI, AIRLIFT_MISO, AIRLIFT_SCK, AIRLIFT_CS, AIRLIFT_BUSY);
+#endif
+
+// prevent initArduino() to release BT memory
+extern "C" bool btInUse() {
+  return true;
+}
+
+//--------------------------------------------------------------------
+//
+//--------------------------------------------------------------------
 uint8_t* commandBuffer;
 uint8_t* responseBuffer;
 
@@ -78,15 +126,15 @@ void setDebug(int d) {
     // uartAttach();
     ets_install_uart_printf();
     uart_tx_switch(CONFIG_CONSOLE_UART_NUM);
-
-    ets_printf("*** DEBUG ON\n");
   } else {
     PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[1], PIN_FUNC_GPIO);
     PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[3], PIN_FUNC_GPIO);
 
+#if CONFIG_IDF_TARGET_ESP32
     _GLOBAL_REENT->_stdin  = (FILE*) &__sf_fake_stdin;
     _GLOBAL_REENT->_stdout = (FILE*) &__sf_fake_stdout;
     _GLOBAL_REENT->_stderr = (FILE*) &__sf_fake_stderr;
+#endif
 
     ets_install_putc1(NULL);
     ets_install_putc2(NULL);
@@ -97,48 +145,40 @@ void setupWiFi();
 void setupBluetooth();
 
 void setup() {
-  setDebug(debug);
+#ifndef CMAKE_BUILD_TYPE_DEBUG
+  setDebug(0);
+#endif
 
+#if !AIRLIFT
   // put SWD and SWCLK pins connected to SAMD as inputs
   pinMode(15, INPUT);
   pinMode(21, INPUT);
-
-#if defined(NANO_RP2040_CONNECT)
-  pinMode(26, OUTPUT);
-  pinMode(27, OUTPUT);
-  digitalWrite(26, HIGH);
-  digitalWrite(27, HIGH);
 #endif
 
-  pinMode(5, INPUT);
-  if (digitalRead(5) == LOW) {
-    if (debug) ets_printf("*** BLUETOOTH ON\n");
-
+  pinMode(AIRLIFT_CS, INPUT);
+  if (digitalRead(AIRLIFT_CS) == LOW) {
     setupBluetooth();
   } else {
-    if (debug)  ets_printf("*** WIFI ON\n");
-
     setupWiFi();
   }
 }
 
-// ADAFRUIT-CHANGE: AirLift conditionalization
-#define AIRLIFT 1
+// #define UNO_WIFI_REV2
 
 void setupBluetooth() {
-  if (debug)  ets_printf("setup periph\n");
+  NINA_PRINTF("*** BLUETOOTH\n");
 
   periph_module_enable(PERIPH_UART1_MODULE);
   periph_module_enable(PERIPH_UHCI0_MODULE);
 
-  if (debug)  ets_printf("setup pins\n");
+  esp_bt_controller_config_t btControllerConfig = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
 
+#if defined(CONFIG_IDF_TARGET_ESP32)
 #if defined(AIRLIFT)
   // TX GPIO1 & RX GPIO3 on ESP32 'hardware' UART
   // RTS on ESP_BUSY (GPIO33)
   // CTS on GPIO0 (GPIO0)
-  // uart_set_pin(UART_NUM_1, 22, 23, 33, 0);
-  uart_set_pin(UART_NUM_1, 1, 3, 33, 0);
+  uart_set_pin(UART_NUM_1, 1, 3, AIRLIFT_RTS, AIRLIFT_CTS);
 #elif defined(UNO_WIFI_REV2)
   uart_set_pin(UART_NUM_1, 1, 3, 33, 0); // TX, RX, RTS, CTS
 #elif defined(NANO_RP2040_CONNECT)
@@ -146,11 +186,8 @@ void setupBluetooth() {
 #else
   uart_set_pin(UART_NUM_1, 23, 12, 18, 5);
 #endif
+
   uart_set_hw_flow_ctrl(UART_NUM_1, UART_HW_FLOWCTRL_CTS_RTS, 5);
-
-  if (debug)  ets_printf("setup controller\n");
-
-  esp_bt_controller_config_t btControllerConfig = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
 
   btControllerConfig.hci_uart_no = UART_NUM_1;
 #if defined(AIRLIFT)
@@ -161,33 +198,34 @@ void setupBluetooth() {
   btControllerConfig.hci_uart_baudrate = 912600;
 #endif
 
-  esp_bt_controller_init(&btControllerConfig);
-  while (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_IDLE) {
-     if (debug)  ets_printf("idle\n");
+#elif defined(CONFIG_IDF_TARGET_ESP32C6)
+  // UART is configured by CONFIG_BT_LE_HCI_UART_XYZ in sdkconfig.defaults.esp32c6
+#endif
+
+  esp_err_t ret = esp_bt_controller_init(&btControllerConfig);
+  if (ESP_OK != ret) {
+    setDebug(1);
+    NINA_PRINTF("esp_bt_controller_init failed: 0x%x\n", ret);
+    while (1) {}
   }
+
+  while (esp_bt_controller_get_status() == ESP_BT_CONTROLLER_STATUS_IDLE);
   esp_bt_controller_enable(ESP_BT_MODE_BLE);
+
+#if defined(CONFIG_IDF_TARGET_ESP32)
   esp_bt_sleep_enable();
+#endif
 
   vTaskSuspend(NULL);
 
-  // Don't exit. We don't need loop() to run.
   while (1) {
     vTaskDelay(portMAX_DELAY);
-    if (debug)  ets_printf(".");
   }
 }
 
-unsigned long getTime() {
-  int ret = 0;
-  do {
-    ret = WiFi.getTime();
-  } while (ret == 0);
-  return ret;
-}
-
 void setupWiFi() {
+  NINA_PRINTF("WIFI ON\n");
   esp_bt_controller_mem_release(ESP_BT_MODE_BTDM);
-  if (debug)  ets_printf("*** SPIS\n");
   SPIS.begin();
 
   esp_vfs_spiffs_conf_t conf = {
@@ -198,25 +236,28 @@ void setupWiFi() {
   };
 
   esp_err_t ret = esp_vfs_spiffs_register(&conf);
+  (void) ret;
 
   if (WiFi.status() == WL_NO_SHIELD) {
-    if (debug)  ets_printf("*** NOSHIELD\n");
+    if (!debug) {
+      setDebug(1);
+    }
+    NINA_PRINTF("*** NOSHIELD\n");
     while (1); // no shield
   }
 
   commandBuffer = (uint8_t*)heap_caps_malloc(SPI_BUFFER_LEN, MALLOC_CAP_DMA);
   responseBuffer = (uint8_t*)heap_caps_malloc(SPI_BUFFER_LEN, MALLOC_CAP_DMA);
 
-  if (debug)  ets_printf("*** BEGIN\n");
+  NINA_PRINTF("*** CommandHandler Begin\n");
   CommandHandler.begin();
 }
 
 void loop() {
-  if (debug)  ets_printf(".");
   // wait for a command
   memset(commandBuffer, 0x00, SPI_BUFFER_LEN);
   int commandLength = SPIS.transfer(NULL, commandBuffer, SPI_BUFFER_LEN);
-  if (debug)  ets_printf("%d", commandLength);
+
   if (commandLength == 0) {
     return;
   }

@@ -17,27 +17,45 @@
   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
-#include <lwip/sockets.h>
-#include <driver/spi_common.h>
+#include <Arduino.h>
 
+#include <Network.h>
+#include <NetworkClientSecure.h>
 #include <WiFi.h>
-#include <WiFiClient.h>
-#include <WiFiServer.h>
-#include <WiFiSSLClient.h>
-#include <WiFiUdp.h>
-// ADAFRUIT-CHANGE: Adafruit-style enterprise wifi support
-#include "esp_wpa2.h"
 
 #include "CommandHandler.h"
 
-#include <BearSSLClient.h>
-#include <BearSSLTrustAnchors.h>
-#include <ArduinoECCX08.h>
-#include <ArduinoBearSSL.h>
-#include "CryptoUtil.h"
-#include "ECCX08Cert.h"
+#include "lwip/inet_chksum.h"
+#include "lwip/sockets.h"
+#include "lwip/priv/sockets_priv.h"
+#include "lwip/prot/icmp.h"
+#include "driver/spi_common.h"
+#include "lwip/esp_netif_lwip_internal.h"
+
+// ADAFRUIT-CHANGE: Adafruit-style enterprise wifi support
+#include "esp_eap_client.h"
+#include "esp_wifi.h"
+#include "esp_mac.h"
 
 #include "esp_log.h"
+#include "esp_sntp.h"
+
+// Socket types
+#define TCP_MODE 0x00
+#define UDP_MODE 0x01
+#define TLS_MODE 0x02
+#define UDP_MULTICAST_MODE 0x03
+// Socket type not set
+#define NO_MODE 0xFF
+
+// Command flags
+#define START_CMD 0xE0
+#define END_CMD 0xEE
+#define ERR_CMD 0xEF
+// Set this bit for a reply
+#define REPLY_FLAG 0x80
+#define CMD_FLAG 0x00
+
 
 #ifdef LWIP_PROVIDE_ERRNO
 int errno;
@@ -46,7 +64,7 @@ int errno;
 // Note: following version definition line is parsed by python script. Please don't change its format (space, indent) only update its version number.
 // ADAFRUIT-CHANGE: not fixed length
 // The version number obeys semver rules. We suffix with "+adafruit" to distinguish from Arduino NINA-FW.
-const char FIRMWARE_VERSION[] = "2.0.0-rc.0+adafruit";
+const char FIRMWARE_VERSION[] = "3.0.0";
 
 // ADAFRUIT-CHANGE: user-supplied cert and key
 // Optional, user-defined X.509 certificate
@@ -57,18 +75,175 @@ bool setCert = 0;
 char PK_BUFF[1700];
 bool setPSK = 0;
 
-/*IPAddress*/uint32_t resolvedHostname;
+// IPv4 only: don't use IPAddress here.
+uint32_t resolvedHostname;
 
 #define MAX_SOCKETS CONFIG_LWIP_MAX_SOCKETS
 
 uint8_t socketTypes[MAX_SOCKETS];
-WiFiClient tcpClients[MAX_SOCKETS];
-WiFiUDP udps[MAX_SOCKETS];
-WiFiSSLClient tlsClients[MAX_SOCKETS];
-WiFiServer tcpServers[MAX_SOCKETS];
+NetworkClient tcpClients[MAX_SOCKETS];
+NetworkUDP udps[MAX_SOCKETS];
+NetworkServer tcpServers[MAX_SOCKETS];
+NetworkClientSecure tlsClients[MAX_SOCKETS];
 
-WiFiClient bearssl_tcp_client;
-BearSSLClient bearsslClient(bearssl_tcp_client, ArduinoIoTCloudTrustAnchor, ArduinoIoTCloudTrustAnchor_NUM);
+//--------------------------------------------------------------------
+// ADAFRUIT CHANGE
+//--------------------------------------------------------------------
+
+// Root certificate bundle provided by ESP-IDF. This available by default via ESP-iDF esp_crt_bundle_attach(),
+// but arduino-esp32 doesn't provide a way to invoke that default easily, so we declare these to use
+// the default bundle explicitly.
+extern const uint8_t x509_crt_imported_bundle_bin_start[] asm("_binary_x509_crt_bundle_start");
+extern const uint8_t x509_crt_imported_bundle_bin_end[]   asm("_binary_x509_crt_bundle_end");
+
+// Reasons for STA disconnect.
+static uint8_t _disconnectReason = WIFI_REASON_UNSPECIFIED;
+
+extern "C" {
+  static esp_netif_recv_ret_t IRAM_ATTR staNetifInput_hook(void *input_netif_handle, void *buffer, size_t len, void *eb) {
+#ifdef CONFIG_ESP_NETIF_RECEIVE_REPORT_ERRORS
+  esp_netif_recv_ret_t ret =
+#endif
+  CommandHandler.staNetifInput_orig(input_netif_handle, buffer, len, eb);
+  CommandHandlerClass::onWiFiReceive();
+
+  return ESP_NETIF_OPTIONAL_RETURN_CODE(ret);
+}
+
+static esp_netif_recv_ret_t IRAM_ATTR apNetifInput_hook(void *input_netif_handle, void *buffer, size_t len, void *eb) {
+#ifdef CONFIG_ESP_NETIF_RECEIVE_REPORT_ERRORS
+  esp_netif_recv_ret_t ret =
+#endif
+  CommandHandler.apNetifInput_orig(input_netif_handle, buffer, len, eb);
+  CommandHandlerClass::onWiFiReceive();
+
+  return ESP_NETIF_OPTIONAL_RETURN_CODE(ret);
+}
+
+}
+
+static void _setupNTP(void) {
+  esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+  esp_sntp_setservername(0, (char*)"0.pool.ntp.org");
+  esp_sntp_setservername(1, (char*)"1.pool.ntp.org");
+  esp_sntp_setservername(2, (char*)"2.pool.ntp.org");
+  esp_sntp_init();
+}
+
+extern esp_netif_t *get_esp_interface_netif(esp_interface_t interface);
+
+void _setupEventHandlers(void) {
+  // Fetch the default netif's. Interpose our own input handlers in front of their input handlers,
+  // so that we can notice every time we recieve a packet.
+
+  esp_netif_t *staNetif = get_esp_interface_netif(ESP_IF_WIFI_STA);
+  esp_netif_t *apNetif = get_esp_interface_netif(ESP_IF_WIFI_AP);
+
+  if (staNetif != NULL && staNetif->lwip_input_fn != staNetifInput_hook) {
+    CommandHandler.staNetifInput_orig = staNetif->lwip_input_fn;
+    staNetif->lwip_input_fn = staNetifInput_hook;
+  }
+
+  if (apNetif != NULL && apNetif->lwip_input_fn != staNetifInput_hook) {
+    CommandHandler.apNetifInput_orig = apNetif->lwip_input_fn;
+    apNetif->lwip_input_fn = apNetifInput_hook;
+  }
+
+  // Do some cleanup on a station disconnect.
+  WiFi.onEvent(&CommandHandlerClass::onWiFiDisconnect, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+}
+
+static void _setupAfterWifiBegin(void) {
+  _setupNTP();
+  _setupEventHandlers();
+}
+
+static int _ping(/*IPAddress*/uint32_t host, uint8_t ttl) {
+  uint32_t timeout = 5000;
+
+  int s = socket(AF_INET, SOCK_RAW, IP_PROTO_ICMP);
+
+  struct timeval timeoutVal;
+  timeoutVal.tv_sec = (timeout / 1000);
+  timeoutVal.tv_usec = (timeout % 1000) * 1000;
+
+  setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &timeoutVal, sizeof(timeoutVal));
+  setsockopt(s, IPPROTO_IP, IP_TTL, &ttl, sizeof(ttl));
+
+  struct __attribute__((__packed__)) {
+    struct icmp_echo_hdr header;
+    uint8_t data[32];
+  } request;
+
+  ICMPH_TYPE_SET(&request.header, ICMP_ECHO);
+  ICMPH_CODE_SET(&request.header, 0);
+  request.header.chksum = 0;
+  request.header.id = 0xAFAF;
+  request.header.seqno = random(0xffff);
+
+  for (size_t i = 0; i < sizeof(request.data); i++) {
+    request.data[i] = i;
+  }
+
+  request.header.chksum = inet_chksum(&request, sizeof(request));
+
+  ip_addr_t addr;
+  addr.type = IPADDR_TYPE_V4;
+  addr.u_addr.ip4.addr = host;
+  //  IP_ADDR4(&addr, ip[0], ip[1], ip[2], ip[3]);
+
+  struct sockaddr_in to;
+  struct sockaddr_in from;
+
+  to.sin_len = sizeof(to);
+  to.sin_family = AF_INET;
+  inet_addr_from_ip4addr(&to.sin_addr, ip_2_ip4(&addr));
+
+  sendto(s, &request, sizeof(request), 0, (struct sockaddr*)&to, sizeof(to));
+  unsigned long sendTime = millis();
+  unsigned long recvTime = 0;
+
+  do {
+    socklen_t fromlen = sizeof(from);
+
+    struct __attribute__((__packed__)) {
+      struct ip_hdr ipHeader;
+      struct icmp_echo_hdr header;
+    } response;
+
+    int rxSize = recvfrom(s, &response, sizeof(response), 0, (struct sockaddr*)&from, (socklen_t*)&fromlen);
+    if (rxSize == -1) {
+      // time out
+      break;
+    }
+
+    if (rxSize < sizeof(response)) {
+      // too short
+      continue;
+    }
+
+    if (from.sin_family != AF_INET) {
+      // not IPv4
+      continue;
+    }
+
+    if ((response.header.id == request.header.id) && (response.header.seqno == request.header.seqno)) {
+      recvTime = millis();
+    }
+  } while (recvTime == 0);
+
+  close(s);
+
+  if (recvTime == 0) {
+    return -1;
+  } else {
+    return (recvTime - sendTime);
+  }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// Command handlers
+//////////////////////////////////////////////////////////////////////////////
 
 int setNet(const uint8_t command[], uint8_t response[])
 {
@@ -78,6 +253,7 @@ int setNet(const uint8_t command[], uint8_t response[])
   memcpy(ssid, &command[4], command[3]);
 
   WiFi.begin(ssid);
+  _setupAfterWifiBegin();
 
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length
@@ -98,6 +274,7 @@ int setPassPhrase(const uint8_t command[], uint8_t response[])
   memcpy(pass, &command[5 + command[3]], command[4 + command[3]]);
 
   WiFi.begin(ssid, pass);
+  _setupAfterWifiBegin();
 
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length
@@ -152,7 +329,7 @@ int setDNSconfig(const uint8_t command[], uint8_t response[])
   memcpy(&dns1, &command[6], sizeof(dns1));
   memcpy(&dns2, &command[11], sizeof(dns2));
 
-  WiFi.setDNS(dns1, dns2);
+  WiFi.setDNS(IPAddress(dns1), IPAddress(dns2));
 
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length
@@ -172,7 +349,7 @@ int setHostname(const uint8_t command[], uint8_t response[])
   response[3] = 1; // parameter 1 length
   response[4] = 1;
 
-  WiFi.hostname(hostname);
+  WiFi.setHostname(hostname);
 
   return 6;
 }
@@ -181,10 +358,10 @@ int setPowerMode(const uint8_t command[], uint8_t response[])
 {
   if (command[4]) {
     // low power
-    WiFi.lowPowerMode();
+    WiFi.setSleep(WIFI_PS_MIN_MODEM);
   } else {
     // no low power
-    WiFi.noLowPowerMode();
+    WiFi.setSleep(WIFI_PS_NONE);
   }
 
   response[2] = 1; // number of parameters
@@ -207,7 +384,7 @@ int setApNet(const uint8_t command[], uint8_t response[])
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length
 
-  if (WiFi.beginAP(ssid, channel) != WL_AP_FAILED) {
+  if (WiFi.AP.create(ssid, /*passphrase*/ NULL, channel)) {
     response[4] = 1;
   } else {
     response[4] = 0;
@@ -232,7 +409,7 @@ int setApPassPhrase(const uint8_t command[], uint8_t response[])
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length
 
-  if (WiFi.beginAP(ssid, pass, channel) != WL_AP_FAILED) {
+  if (WiFi.AP.create(ssid, pass, channel)) {
     response[4] = 1;
   } else {
     response[4] = 0;
@@ -254,13 +431,21 @@ int setDebug(const uint8_t command[], uint8_t response[])
   return 6;
 }
 
+#ifdef CONFIG_IDF_TARGET_ESP32
 extern "C" {
   uint8_t temprature_sens_read();
 }
+#endif
 
 int getTemperature(const uint8_t command[], uint8_t response[])
 {
+#if defined(CONFIG_IDF_TARGET_ESP32)
   float temperature = (temprature_sens_read() - 32) / 1.8;
+#elif SOC_TEMP_SENSOR_SUPPORTED
+  float temperature = temperatureRead();
+#else
+  #error "Temperature sensor not supported on this platform"
+#endif
 
   response[2] = 1; // number of parameters
   response[3] = sizeof(temperature); // parameter 1 length
@@ -272,7 +457,7 @@ int getTemperature(const uint8_t command[], uint8_t response[])
 
 int getDNSconfig(const uint8_t command[], uint8_t response[])
 {
-  uint32_t dnsip0 = WiFi.dnsIP();
+  uint32_t dnsip0 = WiFi.dnsIP(0);
   uint32_t dnsip1 = WiFi.dnsIP(1);
 
   response[2] = 2; // number of parameters
@@ -286,13 +471,12 @@ int getDNSconfig(const uint8_t command[], uint8_t response[])
   return 14;
 }
 
+// Reason for disconnect.
 int getReasonCode(const uint8_t command[], uint8_t response[])
 {
-  uint8_t reasonCode = WiFi.reasonCode();
-
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length
-  response[4] = reasonCode;
+  response[4] = _disconnectReason;
 
   return 6;
 }
@@ -310,9 +494,9 @@ int getConnStatus(const uint8_t command[], uint8_t response[])
 
 int getIPaddr(const uint8_t command[], uint8_t response[])
 {
-  /*IPAddress*/uint32_t ip = WiFi.localIP();
-  /*IPAddress*/uint32_t mask = WiFi.subnetMask();
-  /*IPAddress*/uint32_t gwip = WiFi.gatewayIP();
+  uint32_t ip = WiFi.localIP();
+  uint32_t mask = WiFi.subnetMask();
+  uint32_t gwip = WiFi.gatewayIP();
 
   response[2] = 3; // number of parameters
 
@@ -334,6 +518,13 @@ int getMACaddr(const uint8_t command[], uint8_t response[])
 
   WiFi.macAddress(mac);
 
+  if (mac[0] == 0x00 && mac[1] == 0x00 && mac[2] == 0x00 &&
+      mac[3] == 0x00 && mac[4] == 0x00 && mac[5] == 0x00) {
+    // If the MAC address is all zeros, STA/AP interface is not enabled/ready.
+    // use base mac address
+    esp_base_mac_addr_get(mac);
+  }
+
   response[2] = 1; // number of parameters
   response[3] = sizeof(mac); // parameter 1 length
 
@@ -345,13 +536,13 @@ int getMACaddr(const uint8_t command[], uint8_t response[])
 int getCurrSSID(const uint8_t command[], uint8_t response[])
 {
   // ssid
-  const char* ssid = WiFi.SSID();
-  uint8_t ssidLen = strlen(ssid);
+  String ssid = WiFi.SSID();
+  uint8_t ssidLen = ssid.length();
 
   response[2] = 1; // number of parameters
   response[3] = ssidLen; // parameter 1 length
 
-  memcpy(&response[4], ssid, ssidLen);
+  memcpy(&response[4], ssid.c_str(), ssidLen);
 
   return (5 + ssidLen);
 }
@@ -384,7 +575,23 @@ int getCurrRSSI(const uint8_t command[], uint8_t response[])
 
 int getCurrEnct(const uint8_t command[], uint8_t response[])
 {
-  uint8_t encryptionType = WiFi.encryptionType();
+  wifi_ap_record_t info;
+  esp_wifi_sta_get_ap_info(&info);
+
+  uint8_t encryptionType = info.authmode;
+
+  if (encryptionType == WIFI_AUTH_OPEN) {
+    encryptionType = 7;
+  } else if (encryptionType == WIFI_AUTH_WEP) {
+    encryptionType = 5;
+  } else if (encryptionType == WIFI_AUTH_WPA_PSK) {
+    encryptionType = 2;
+  } else if (encryptionType == WIFI_AUTH_WPA2_PSK || encryptionType == WIFI_AUTH_WPA_WPA2_PSK) {
+    encryptionType = 4;
+  } else {
+    // unknown?
+    encryptionType = 255;
+  }
 
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length
@@ -401,12 +608,12 @@ int scanNetworks(const uint8_t command[], uint8_t response[])
   response[2] = num;
 
   for (int i = 0; i < num; i++) {
-    const char* ssid = WiFi.SSID(i);
-    int ssidLen = strlen(ssid);
+    String ssid = WiFi.SSID(i);
+    int ssidLen = ssid.length();
 
     response[responseLength++] = ssidLen;
 
-    memcpy(&response[responseLength], ssid, ssidLen);
+    memcpy(&response[responseLength], ssid.c_str(), ssidLen);
     responseLength += ssidLen;
   }
 
@@ -421,6 +628,7 @@ int startServerTcp(const uint8_t command[], uint8_t response[])
   uint8_t type;
 
   if (command[2] == 3) {
+    // 3 params, no ip
     memcpy(&port, &command[4], sizeof(port));
     port = ntohs(port);
     socket = command[7];
@@ -436,14 +644,19 @@ int startServerTcp(const uint8_t command[], uint8_t response[])
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length
 
-  if (type == 0x00 && tcpServers[socket].begin(port)) {
-    socketTypes[socket] = 0x00;
+  if (type == TCP_MODE) {
+    tcpServers[socket].begin(port);
+    if (tcpServers[socket]) {
+      socketTypes[socket] = TCP_MODE;
+      response[4] = 1;
+    } else {
+      response[4] = 0;
+    }
+  } else if (type == UDP_MODE && udps[socket].begin(port)) {
+    socketTypes[socket] = UDP_MODE;
     response[4] = 1;
-  } else if (type == 0x01 && udps[socket].begin(port)) {
-    socketTypes[socket] = 0x01;
-    response[4] = 1;
-  } else if (type == 0x03 && udps[socket].beginMulticast(ip, port)) {
-    socketTypes[socket] = 0x01;
+  } else if (type == UDP_MULTICAST_MODE && udps[socket].beginMulticast(IPAddress(ip), port)) {
+    socketTypes[socket] = UDP_MODE;
     response[4] = 1;
   } else {
     response[4] = 0;
@@ -484,7 +697,7 @@ int availDataTcp(const uint8_t command[], uint8_t response[])
   uint8_t socket = command[4];
   uint16_t available = 0;
 
-  if (socketTypes[socket] == 0x00) {
+  if (socketTypes[socket] == TCP_MODE) {
     if (tcpServers[socket]) {
 
       uint8_t accept = command[6];
@@ -492,10 +705,10 @@ int availDataTcp(const uint8_t command[], uint8_t response[])
 
       if (accept) {
         for (int i = 0; i < MAX_SOCKETS; i++) {
-          if (socketTypes[i] == 255) {
+          if (socketTypes[i] == NO_MODE) {
             WiFiClient client = tcpServers[socket].accept();
             if (client) {
-              socketTypes[i] = 0x00;
+              socketTypes[i] = TCP_MODE;
               tcpClients[i] = client;
               available = i;
             }
@@ -503,7 +716,7 @@ int availDataTcp(const uint8_t command[], uint8_t response[])
           }
         }
      } else {
-      WiFiClient client = tcpServers[socket].available();
+      WiFiClient client = tcpServers[socket].accept();
       if (client) {
         // try to find existing socket slot
         for (int i = 0; i < MAX_SOCKETS; i++) {
@@ -511,7 +724,7 @@ int availDataTcp(const uint8_t command[], uint8_t response[])
             continue; // skip this slot
           }
 
-          if (socketTypes[i] == 0x00 && tcpClients[i] == client) {
+          if (socketTypes[i] == TCP_MODE && tcpClients[i] == client) {
             available = i;
             break;
           }
@@ -525,8 +738,8 @@ int availDataTcp(const uint8_t command[], uint8_t response[])
               continue; // skip this slot
             }
 
-            if (socketTypes[i] == 255) {
-              socketTypes[i] = 0x00;
+            if (socketTypes[i] == NO_MODE) {
+              socketTypes[i] = TCP_MODE;
               tcpClients[i] = client;
 
               available = i;
@@ -539,12 +752,10 @@ int availDataTcp(const uint8_t command[], uint8_t response[])
     } else {
       available = tcpClients[socket].available();
     }
-  } else if (socketTypes[socket] == 0x01) {
+  } else if (socketTypes[socket] == UDP_MODE) {
     available = udps[socket].available();
-  } else if (socketTypes[socket] == 0x02) {
+  } else if (socketTypes[socket] == TLS_MODE) {
     available = tlsClients[socket].available();
-  } else if (socketTypes[socket] == 0x04) {
-    available = bearsslClient.available();
   }
 
   response[2] = 1; // number of parameters
@@ -563,59 +774,27 @@ int getDataTcp(const uint8_t command[], uint8_t response[])
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length
 
-  if (socketTypes[socket] == 0x00) {
+  if (socketTypes[socket] == TCP_MODE) {
     if (peek) {
       response[4] = tcpClients[socket].peek();
     } else {
       response[4] = tcpClients[socket].read();
     }
-  } else if (socketTypes[socket] == 0x01) {
+  } else if (socketTypes[socket] == UDP_MODE) {
     if (peek) {
       response[4] = udps[socket].peek();
     } else {
       response[4] = udps[socket].read();
     }
-  } else if (socketTypes[socket] == 0x02) {
+  } else if (socketTypes[socket] == TLS_MODE) {
     if (peek) {
       response[4] = tlsClients[socket].peek();
     } else {
       response[4] = tlsClients[socket].read();
     }
-  } else if (socketTypes[socket] == 0x04) {
-    if (peek) {
-      response[4] = bearsslClient.peek();
-    } else {
-      response[4] = bearsslClient.read();
-    }
   }
 
   return 6;
-}
-
-static ECCX08CertClass eccx08_cert;
-unsigned long getTime();
-static void configureECCx08() {
-  if (!ECCX08.begin()) {
-    ESP_LOGE("ECCX08", "ECCX08.begin() failed");
-    return;
-  }
-  ArduinoBearSSL.onGetTime(getTime);
-  ESP_LOGI("ECCX08", "ArduinoBearSSL.getTime() = %lu", ArduinoBearSSL.getTime());
-
-  String device_id;
-  if (!CryptoUtil::readDeviceId(ECCX08, device_id, ECCX08Slot::DeviceId)) {
-    ESP_LOGE("ECCX08", "Cryptography processor read failure.");
-    return;
-  }
-  ESP_LOGI("ECCX08", "device_id = %s", device_id.c_str());
-
-  if (!CryptoUtil::reconstructCertificate(eccx08_cert, device_id, ECCX08Slot::Key, ECCX08Slot::CompressedCertificate, ECCX08Slot::SerialNumberAndAuthorityKeyIdentifier)) {
-    ESP_LOGE("ECCX08", "Cryptography certificate reconstruction failure.");
-    return;
-  }
-
-  bearsslClient.setEccSlot(static_cast<int>(ECCX08Slot::Key), eccx08_cert.bytes(), eccx08_cert.length());
-  ESP_LOGI("ECCX08", "ArduinoBearSSL configured");
 }
 
 int startClientTcp(const uint8_t command[], uint8_t response[])
@@ -628,6 +807,7 @@ int startClientTcp(const uint8_t command[], uint8_t response[])
 
   memset(host, 0x00, sizeof(host));
 
+  // Could have 4 or 5 arguments.
   if (command[2] == 4) {
     memcpy(&ip, &command[4], sizeof(ip));
     memcpy(&port, &command[9], sizeof(port));
@@ -643,7 +823,7 @@ int startClientTcp(const uint8_t command[], uint8_t response[])
     type = command[15 + command[3]];
   }
 
-  if (type == 0x00) {
+  if (type == TCP_MODE) {
     int result;
 
     if (host[0] != '\0') {
@@ -653,7 +833,7 @@ int startClientTcp(const uint8_t command[], uint8_t response[])
     }
 
     if (result) {
-      socketTypes[socket] = 0x00;
+      socketTypes[socket] = TCP_MODE;
 
       response[2] = 1; // number of parameters
       response[3] = 1; // parameter 1 length
@@ -665,7 +845,7 @@ int startClientTcp(const uint8_t command[], uint8_t response[])
 
       return 4;
     }
-  } else if (type == 0x01) {
+  } else if (type == UDP_MODE) {
     int result;
 
     if (host[0] != '\0') {
@@ -674,8 +854,8 @@ int startClientTcp(const uint8_t command[], uint8_t response[])
       result = udps[socket].beginPacket(ip, port);
     }
 
-    if (result) {
-      socketTypes[socket] = 0x01;
+    if (result == 1) {
+      socketTypes[socket] = UDP_MODE;
 
       response[2] = 1; // number of parameters
       response[3] = 1; // parameter 1 length
@@ -687,12 +867,16 @@ int startClientTcp(const uint8_t command[], uint8_t response[])
 
       return 4;
     }
-  } else if (type == 0x02) {
+  } else if (type == TLS_MODE) {
     int result;
     // ADAFRUIT-CHANGE: user-supplied cert
     if (setCert && setPSK) {
       tlsClients[socket].setCertificate(CERT_BUF);
       tlsClients[socket].setPrivateKey(PK_BUFF);
+    } else {
+      // Use default certificate bundle and pass its size, as required.
+      tlsClients[socket].setCACertBundle(x509_crt_imported_bundle_bin_start,
+                                         x509_crt_imported_bundle_bin_end - x509_crt_imported_bundle_bin_start);
     }
     if (host[0] != '\0') {
       result = tlsClients[socket].connect(host, port);
@@ -701,31 +885,7 @@ int startClientTcp(const uint8_t command[], uint8_t response[])
     }
 
     if (result) {
-      socketTypes[socket] = 0x02;
-
-      response[2] = 1; // number of parameters
-      response[3] = 1; // parameter 1 length
-      response[4] = 1;
-
-      return 6;
-    } else {
-      response[2] = 0; // number of parameters
-
-      return 4;
-    }
-  } else if (type == 0x04) {
-    int result;
-
-    configureECCx08();
-
-    if (host[0] != '\0') {
-      result = bearsslClient.connect(host, port);
-    } else {
-      result = bearsslClient.connect(ip, port);
-    }
-
-    if (result) {
-      socketTypes[socket] = 0x04;
+      socketTypes[socket] = TLS_MODE;
 
       response[2] = 1; // number of parameters
       response[3] = 1; // parameter 1 length
@@ -748,16 +908,14 @@ int stopClientTcp(const uint8_t command[], uint8_t response[])
 {
   uint8_t socket = command[4];
 
-  if (socketTypes[socket] == 0x00) {
+  if (socketTypes[socket] == TCP_MODE) {
     tcpClients[socket].stop();
-  } else if (socketTypes[socket] == 0x01) {
+  } else if (socketTypes[socket] == UDP_MODE) {
     udps[socket].stop();
-  } else if (socketTypes[socket] == 0x02) {
+  } else if (socketTypes[socket] == TLS_MODE) {
     tlsClients[socket].stop();
-  } else if (socketTypes[socket] == 0x04) {
-    bearsslClient.stop();
   }
-  socketTypes[socket] = 255;
+  socketTypes[socket] = NO_MODE;
 
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length
@@ -773,14 +931,12 @@ int getClientStateTcp(const uint8_t command[], uint8_t response[])
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length
 
-  if ((socketTypes[socket] == 0x00) && tcpClients[socket].connected()) {
+  if ((socketTypes[socket] == TCP_MODE) && tcpClients[socket].connected()) {
     response[4] = 4;
-  } else if ((socketTypes[socket] == 0x02) && tlsClients[socket].connected()) {
-    response[4] = 4;
-  } else if ((socketTypes[socket] == 0x04) && bearsslClient.connected()) {
+  } else if ((socketTypes[socket] == TLS_MODE) && tlsClients[socket].connected()) {
     response[4] = 4;
   } else {
-    socketTypes[socket] = 255;
+    socketTypes[socket] = NO_MODE;
     response[4] = 0;
   }
 
@@ -832,8 +988,10 @@ int reqHostByName(const uint8_t command[], uint8_t response[])
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length
 
-  resolvedHostname = /*IPAddress(255, 255, 255, 255)*/0xffffffff;
-  if (WiFi.hostByName(host, resolvedHostname)) {
+  IPAddress ip_address;
+  if (WiFi.hostByName(host, ip_address) == 1) {
+    // cast to uint_32.
+    resolvedHostname = ip_address;
     response[4] = 1;
   } else {
     response[4] = 0;
@@ -894,18 +1052,15 @@ int getRemoteData(const uint8_t command[], uint8_t response[])
   /*IPAddress*/uint32_t ip = /*IPAddress(0, 0, 0, 0)*/0;
   uint16_t port = 0;
 
-  if (socketTypes[socket] == 0x00) {
+  if (socketTypes[socket] == TCP_MODE) {
     ip = tcpClients[socket].remoteIP();
     port = tcpClients[socket].remotePort();
-  } else if (socketTypes[socket] == 0x01) {
+  } else if (socketTypes[socket] == UDP_MODE) {
     ip = udps[socket].remoteIP();
     port = udps[socket].remotePort();
-  } else if (socketTypes[socket] == 0x02) {
+  } else if (socketTypes[socket] == TLS_MODE) {
     ip = tlsClients[socket].remoteIP();
     port = tlsClients[socket].remotePort();
-  } else if (socketTypes[socket] == 0x04) {
-    ip = static_cast<WiFiClient*>(bearsslClient.getClient())->remoteIP();
-    port = static_cast<WiFiClient*>(bearsslClient.getClient())->remotePort();
   }
 
   response[2] = 2; // number of parameters
@@ -922,7 +1077,13 @@ int getRemoteData(const uint8_t command[], uint8_t response[])
 
 int getTime(const uint8_t command[], uint8_t response[])
 {
-  unsigned long now = WiFi.getTime();
+  time_t now;
+
+  // Same logic as in old WiFi.getTime();
+  time(&now);
+  if (now < 946684800) {
+    now = 0;
+  }
 
   response[2] = 1; // number of parameters
   response[3] = sizeof(now); // parameter 1 length
@@ -1025,7 +1186,8 @@ int setEnt(const uint8_t command[], uint8_t response[])
     rootCA = (const char*)commandPtr;
     commandPtr += rootCALen;
 
-    WiFi.beginEnterprise(ssid, username, password, identity, rootCA);
+    WiFi.STA.begin();
+    WiFi.STA.connect(ssid, WPA2_AUTH_PEAP, identity, username, password, identity, rootCA);
   } else {
     // EAP-TLS
     const char* cert;
@@ -1067,7 +1229,8 @@ int setEnt(const uint8_t command[], uint8_t response[])
     rootCA = (const char*)commandPtr;
     commandPtr += rootCALen;
 
-    WiFi.beginEnterpriseTLS(ssid, cert, key, identity, rootCA);
+    WiFi.STA.begin();
+    WiFi.STA.connect(ssid, WPA2_AUTH_TLS, identity, /*username*/ NULL, /*password*/ NULL, rootCA, cert, key);
   }
 
   response[2] = 1; // number of parameters
@@ -1087,14 +1250,13 @@ int sendDataTcp(const uint8_t command[], uint8_t response[])
   memcpy(&length, &command[6], sizeof(length));
   length = ntohs(length);
 
-  if ((socketTypes[socket] == 0x00) && tcpServers[socket]) {
-    written = tcpServers[socket].write(&command[8], length);
-  } else if (socketTypes[socket] == 0x00) {
+  if ((socketTypes[socket] == TCP_MODE) && tcpServers[socket]) {
+    // Client corresponding to the server.
     written = tcpClients[socket].write(&command[8], length);
-  } else if (socketTypes[socket] == 0x02) {
+  } else if (socketTypes[socket] == TCP_MODE) {
+    written = tcpClients[socket].write(&command[8], length);
+  } else if (socketTypes[socket] == TLS_MODE) {
     written = tlsClients[socket].write(&command[8], length);
-  } else if (socketTypes[socket] == 0x04) {
-    written = bearsslClient.write(&command[8], length);
   }
 
   response[2] = 1; // number of parameters
@@ -1113,14 +1275,12 @@ int getDataBufTcp(const uint8_t command[], uint8_t response[])
   socket = command[5];
   memcpy(&length, &command[8], sizeof(length));
 
-  if (socketTypes[socket] == 0x00) {
+  if (socketTypes[socket] == TCP_MODE) {
     read = tcpClients[socket].read(&response[5], length);
-  } else if (socketTypes[socket] == 0x01) {
+  } else if (socketTypes[socket] == UDP_MODE) {
     read = udps[socket].read(&response[5], length);
-  } else if (socketTypes[socket] == 0x02) {
+  } else if (socketTypes[socket] == TLS_MODE) {
     read = tlsClients[socket].read(&response[5], length);
-  } else if (socketTypes[socket] == 0x04) {
-    read = bearsslClient.read(&response[5], length);
   }
 
   if (read < 0) {
@@ -1164,7 +1324,7 @@ int ping(const uint8_t command[], uint8_t response[])
   memcpy(&ip, &command[4], sizeof(ip));
   ttl = command[9];
 
-  result = WiFi.ping(ip, ttl);
+  result = _ping(ip, ttl);
 
   response[2] = 1; // number of parameters
   response[3] = sizeof(result); // parameter 1 length
@@ -1178,7 +1338,7 @@ int getSocket(const uint8_t command[], uint8_t response[])
   uint8_t result = 255;
 
   for (int i = 0; i < MAX_SOCKETS; i++) {
-    if (socketTypes[i] == 255) {
+    if (socketTypes[i] == NO_MODE) {
       result = i;
       break;
     }
@@ -1253,7 +1413,8 @@ int getAnalogRead(const uint8_t command[], uint8_t response[])
   uint8_t pin = command[4];
   uint8_t atten = command[6];
 
-  int value = analogRead(pin, atten);
+  analogSetPinAttenuation(pin, (adc_attenuation_t) atten);
+  int value = analogRead(pin);
 
   response[2] = 1; // number of parameters
   response[3] = sizeof(value); // parameter 1 length
@@ -1297,7 +1458,7 @@ int wpa2EntSetIdentity(const uint8_t command[], uint8_t response[]) {
   memset(identity, 0x00, sizeof(identity));
   memcpy(identity, &command[4], command[3]);
 
-  esp_wifi_sta_wpa2_ent_set_identity((uint8_t *)identity, strlen(identity));
+  esp_eap_client_set_identity((uint8_t *)identity, strlen(identity));
 
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length
@@ -1312,7 +1473,7 @@ int wpa2EntSetUsername(const uint8_t command[], uint8_t response[]) {
   memset(username, 0x00, sizeof(username));
   memcpy(username, &command[4], command[3]);
 
-  esp_wifi_sta_wpa2_ent_set_username((uint8_t *)username, strlen(username));
+  esp_eap_client_set_username((uint8_t *)username, strlen(username));
 
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length
@@ -1327,7 +1488,7 @@ int wpa2EntSetPassword(const uint8_t command[], uint8_t response[]) {
   memset(password, 0x00, sizeof(password));
   memcpy(password, &command[4], command[3]);
 
-  esp_wifi_sta_wpa2_ent_set_password((uint8_t *)password, strlen(password));
+  esp_eap_client_set_password((uint8_t *)password, strlen(password));
 
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length
@@ -1350,8 +1511,7 @@ int wpa2EntSetCertKey(const uint8_t command[], uint8_t response[]) {
 
 int wpa2EntEnable(const uint8_t command[], uint8_t response[]) {
 
-  esp_wpa2_config_t config = WPA2_CONFIG_INIT_DEFAULT();
-  esp_wifi_sta_wpa2_ent_enable(&config);
+  esp_wifi_sta_enterprise_enable();
 
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length
@@ -1361,7 +1521,7 @@ int wpa2EntEnable(const uint8_t command[], uint8_t response[]) {
 }
 
 int setClientCert(const uint8_t command[], uint8_t response[]){
-  ets_printf("*** Called setClientCert\n");
+  ESP_LOGD("CommanderHandler", "*** Called setClientCert\n");
 
   memset(CERT_BUF, 0x00, sizeof(CERT_BUF));
   memcpy(CERT_BUF, &command[4], sizeof(CERT_BUF));
@@ -1376,7 +1536,7 @@ int setClientCert(const uint8_t command[], uint8_t response[]){
 }
 
 int setCertKey(const uint8_t command[], uint8_t response[]){
-  ets_printf("*** Called setCertKey\n");
+  ESP_LOGD("CommanderHandler","*** Called setCertKey\n");
 
   memset(PK_BUFF, 0x00, sizeof(PK_BUFF));
   memcpy(PK_BUFF, &command[4], sizeof(PK_BUFF));
@@ -1458,8 +1618,6 @@ int deleteFile(const uint8_t command[], uint8_t response[]) {
   }
   return 0;
 }
-
-#include <driver/uart.h>
 
 int applyOTA(const uint8_t command[], uint8_t response[]) {
 #ifdef UNO_WIFI_REV2
@@ -1659,6 +1817,8 @@ uint32_t crc_update(uint32_t crc, const void * data, size_t data_len)
 
 int downloadOTA(const uint8_t command[], uint8_t response[])
 {
+// ADAFRUIT-CHANGE: don't need this most of the time
+#ifdef UNO_WIFI_REV2
   static const char * OTA_TAG = "OTA";
   static const char * OTA_FILE = "/fs/UPDATE.BIN.LZSS";
   static const char * OTA_TEMP_FILE = "/fs/UPDATE.BIN.LZSS.TMP";
@@ -1754,6 +1914,9 @@ ota_cleanup:
   fclose(f);
   unlink(OTA_TEMP_FILE);
   return 6;
+#else
+  return 0;
+#endif
 }
 
 //
@@ -1791,7 +1954,7 @@ int socket_close(const uint8_t command[], uint8_t response[])
   uint8_t sock = command[4];
 
   errno = 0;
-  int ret = lwip_close_r(sock);
+  int ret = lwip_close(sock);
 
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length
@@ -1801,7 +1964,7 @@ int socket_close(const uint8_t command[], uint8_t response[])
 
 int socket_errno(const uint8_t command[], uint8_t response[])
 {
-  //[0]     CMD_START   < 0xE0   >
+  //[0]     CMD_START   < START_CMD   >
   //[1]     Command     < 1 byte >
   //[2]     N args      < 1 byte >
   response[2] = 1; // number of parameters
@@ -1830,7 +1993,7 @@ int socket_bind(const uint8_t command[], uint8_t response[])
   addr.sin_port = port;
 
   errno = 0;
-  int ret = lwip_bind_r(sock, (struct sockaddr*) &addr, sizeof(addr));
+  int ret = lwip_bind(sock, (struct sockaddr*) &addr, sizeof(addr));
 
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length
@@ -1851,7 +2014,7 @@ int socket_listen(const uint8_t command[], uint8_t response[])
   uint8_t backlog = command[6];
 
   errno = 0;
-  int ret = lwip_listen_r(sock, backlog);
+  int ret = lwip_listen(sock, backlog);
 
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length
@@ -1872,7 +2035,7 @@ int socket_accept(const uint8_t command[], uint8_t response[])
   socklen_t addr_len = sizeof(addr);
 
   errno = 0;
-  int8_t ret = lwip_accept_r(sock, (struct sockaddr *) &addr, &addr_len);
+  int8_t ret = lwip_accept(sock, (struct sockaddr *) &addr, &addr_len);
 
   response[2] = 3; // number of parameters
   response[3] = 1; // parameter 1 length
@@ -1913,7 +2076,7 @@ int socket_connect(const uint8_t command[], uint8_t response[])
   addr.sin_port = port;
 
   errno = 0;
-  int ret = lwip_connect_r(sock, (struct sockaddr*)&addr, sizeof(addr));
+  int ret = lwip_connect(sock, (struct sockaddr*)&addr, sizeof(addr));
 
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length
@@ -1934,7 +2097,7 @@ int socket_send(const uint8_t command[], uint8_t response[])
   uint16_t size = lwip_ntohs(*((uint16_t *) &command[6]));
 
   errno = 0;
-  int16_t ret = lwip_send_r(sock, &command[8], size, 0);
+  int16_t ret = lwip_send(sock, &command[8], size, 0);
   ret = (ret < 0) ? 0 : ret;
 
   response[2] = 1; // number of parameters
@@ -1958,7 +2121,7 @@ int socket_recv(const uint8_t command[], uint8_t response[])
   size = LWIP_MIN(size, (SPI_MAX_DMA_LEN-16));
 
   errno = 0;
-  int16_t ret = lwip_recv_r(sock, &response[5], size, 0);
+  int16_t ret = lwip_recv(sock, &response[5], size, 0);
   ret = (ret < 0) ? 0 : ret;
 
   response[2] = 1; // number of parameters
@@ -1993,7 +2156,7 @@ int socket_sendto(const uint8_t command[], uint8_t response[])
   addr.sin_port = port;
 
   errno = 0;
-  int16_t ret = lwip_sendto_r(sock, &command[18], size, 0, (struct sockaddr*)&addr, sizeof(addr));
+  int16_t ret = lwip_sendto(sock, &command[18], size, 0, (struct sockaddr*)&addr, sizeof(addr));
   ret = (ret < 0) ? 0 : ret;
 
   response[2] = 1; // number of parameters
@@ -2019,7 +2182,7 @@ int socket_recvfrom(const uint8_t command[], uint8_t response[])
   socklen_t addr_len = sizeof(addr);
 
   errno = 0;
-  int16_t ret = lwip_recvfrom_r(sock, &response[15], size, 0, (struct sockaddr *) &addr, &addr_len);
+  int16_t ret = lwip_recvfrom(sock, &response[15], size, 0, (struct sockaddr *) &addr, &addr_len);
   ret = (ret < 0) ? 0 : ret;
 
   response[2] = 3; // number of parameters
@@ -2060,7 +2223,7 @@ int socket_ioctl(const uint8_t command[], uint8_t response[])
   memcpy(argval, &command[11], size);
 
   errno = 0;
-  int ret = lwip_ioctl_r(sock, cmd, argval);
+  int ret = lwip_ioctl(sock, cmd, argval);
   if (ret == -1) {
       size = 0;
   }
@@ -2144,7 +2307,7 @@ int socket_setsockopt(const uint8_t command[], uint8_t response[])
   memcpy(&optval, &command[11], optlen);
 
   errno = 0;
-  int ret = lwip_setsockopt_r(sock, SOL_SOCKET, optname, optval, optlen);
+  int ret = lwip_setsockopt(sock, SOL_SOCKET, optname, optval, optlen);
 
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length
@@ -2169,7 +2332,7 @@ int socket_getsockopt(const uint8_t command[], uint8_t response[])
   uint8_t optval[LWIP_SETGETSOCKOPT_MAXOPTLEN];
 
   errno = 0;
-  int ret = lwip_getsockopt_r(sock, SOL_SOCKET, optname, optval, &optlen);
+  int ret = lwip_getsockopt(sock, SOL_SOCKET, optname, optval, &optlen);
   if (ret == -1) {
       optlen = 0;
   }
@@ -2261,22 +2424,26 @@ CommandHandlerClass::CommandHandlerClass()
 {
 }
 
+#if defined(CONFIG_IDF_TARGET_ESP32)
 static const int GPIO_IRQ = 0;
+#endif
+
+#if defined(CONFIG_IDF_TARGET_ESP32C6)
+static const int GPIO_IRQ = 9;
+#endif
 
 void CommandHandlerClass::begin()
 {
   pinMode(GPIO_IRQ, OUTPUT);
 
   for (int i = 0; i < MAX_SOCKETS; i++) {
-    socketTypes[i] = 255;
+    socketTypes[i] = NO_MODE;
   }
 
   _updateGpio0PinSemaphore = xSemaphoreCreateCounting(2, 0);
 
-  WiFi.onReceive(CommandHandlerClass::onWiFiReceive);
-  WiFi.onDisconnect(CommandHandlerClass::onWiFiDisconnect);
-
-  xTaskCreatePinnedToCore(CommandHandlerClass::gpio0Updater, "gpio0Updater", 8192, NULL, 1, NULL, 1);
+  xTaskCreatePinnedToCore(CommandHandlerClass::gpio0Updater, "gpio0Updater", 8192, NULL, 1, NULL,
+    CONFIG_FREERTOS_NUMBER_OF_CORES-1);
 }
 
 #define UDIV_UP(a, b) (((a) + (b) - 1) / (b))
@@ -2286,7 +2453,7 @@ int CommandHandlerClass::handle(const uint8_t command[], uint8_t response[])
 {
   int responseLength = 0;
 
-  if (command[0] == 0xe0 && command[1] < NUM_COMMAND_HANDLERS) {
+  if (command[0] == START_CMD && command[1] < NUM_COMMAND_HANDLERS) {
     CommandHandlerType commandHandlerType = commandHandlers[command[1]];
 
     if (commandHandlerType) {
@@ -2295,15 +2462,15 @@ int CommandHandlerClass::handle(const uint8_t command[], uint8_t response[])
   }
 
   if (responseLength == 0) {
-    response[0] = 0xef;
+    response[0] = ERR_CMD;
     response[1] = 0x00;
-    response[2] = 0xee;
+    response[2] = END_CMD;
 
     responseLength = 3;
   } else {
-    response[0] = 0xe0;
-    response[1] = (0x80 | command[1]);
-    response[responseLength - 1] = 0xee;
+    response[0] = START_CMD;
+    response[1] = (REPLY_FLAG | command[1]);
+    response[responseLength - 1] = END_CMD;
   }
 
   xSemaphoreGive(_updateGpio0PinSemaphore);
@@ -2322,33 +2489,29 @@ void CommandHandlerClass::updateGpio0Pin()
 {
   xSemaphoreTake(_updateGpio0PinSemaphore, portMAX_DELAY);
 
-  int available = 0;
+  bool available = false;
 
   for (int i = 0; i < MAX_SOCKETS; i++) {
-    if (socketTypes[i] == 0x00) {
-      if (tcpServers[i] && (tcpServers[i].hasClient() || tcpServers[i].available())) {
-        available = 1;
+    if (socketTypes[i] == TCP_MODE) {
+      if (tcpServers[i] && (tcpServers[i].hasClient() || tcpServers[i].accept())) {
+        available = true;
         break;
       } else if (tcpClients[i] && tcpClients[i].connected() && tcpClients[i].available()) {
-        available = 1;
+        available = true;
         break;
       }
     }
 
-    if (socketTypes[i] == 0x01 && udps[i] && (udps[i].available() || udps[i].parsePacket())) {
-      available = 1;
+    if (socketTypes[i] == UDP_MODE && (udps[i].available() || udps[i].parsePacket())) {
+      available = true;
       break;
     }
 
-    if (socketTypes[i] == 0x02 && tlsClients[i] && tlsClients[i].connected() && tlsClients[i].available()) {
-      available = 1;
+    if (socketTypes[i] == TLS_MODE && tlsClients[i] && tlsClients[i].connected() && tlsClients[i].available()) {
+      available = true;
       break;
     }
 
-    if (socketTypes[i] == 0x04 && bearsslClient.connected() && bearsslClient.available()) {
-      available = 1;
-      break;
-    }
   }
 
   if (available) {
@@ -2367,11 +2530,16 @@ void CommandHandlerClass::onWiFiReceive()
 
 void CommandHandlerClass::handleWiFiReceive()
 {
-  xSemaphoreGiveFromISR(_updateGpio0PinSemaphore, NULL);
+  if (xPortInIsrContext()) {
+    xSemaphoreGiveFromISR(_updateGpio0PinSemaphore, NULL);
+  } else {
+    xSemaphoreGive(_updateGpio0PinSemaphore);
+  }
 }
 
-void CommandHandlerClass::onWiFiDisconnect()
+void CommandHandlerClass::onWiFiDisconnect(arduino_event_t *event)
 {
+  _disconnectReason = event->event_info.wifi_sta_disconnected.reason;
   CommandHandler.handleWiFiDisconnect();
 }
 
@@ -2382,7 +2550,7 @@ void CommandHandlerClass::handleWiFiDisconnect()
 
   for (int i = 0; i < CONFIG_LWIP_MAX_SOCKETS; i++) {
     struct sockaddr_in addr;
-    size_t addrLen = sizeof(addr);
+    socklen_t addrLen = sizeof(addr);
     int socket = LWIP_SOCKET_OFFSET + i;
 
     if (lwip_getsockname(socket, (sockaddr*)&addr, &addrLen) < 0) {
