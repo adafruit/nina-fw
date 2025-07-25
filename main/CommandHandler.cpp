@@ -2426,9 +2426,7 @@ CommandHandlerClass::CommandHandlerClass()
 
 #if defined(CONFIG_IDF_TARGET_ESP32)
 static const int GPIO_IRQ = 0;
-#endif
-
-#if defined(CONFIG_IDF_TARGET_ESP32C6)
+#elif defined(CONFIG_IDF_TARGET_ESP32C6)
 static const int GPIO_IRQ = 9;
 #endif
 
@@ -2442,7 +2440,8 @@ void CommandHandlerClass::begin()
 
   _updateGpio0PinSemaphore = xSemaphoreCreateCounting(2, 0);
 
-  xTaskCreatePinnedToCore(CommandHandlerClass::gpio0Updater, "gpio0Updater", 8192, NULL, 1, NULL,
+  // change priority to higher than loop task() to prevent socket connected() and available() race condition
+  xTaskCreatePinnedToCore(CommandHandlerClass::gpio0Updater, "gpio0Updater", 8192, NULL, 2, NULL,
     CONFIG_FREERTOS_NUMBER_OF_CORES-1);
 }
 
@@ -2489,26 +2488,26 @@ void CommandHandlerClass::updateGpio0Pin()
 {
   xSemaphoreTake(_updateGpio0PinSemaphore, portMAX_DELAY);
 
-  bool available = false;
+  int available = 0;
 
   for (int i = 0; i < MAX_SOCKETS; i++) {
     if (socketTypes[i] == TCP_MODE) {
       if (tcpServers[i] && (tcpServers[i].hasClient() || tcpServers[i].accept())) {
-        available = true;
+        available = 1;
         break;
       } else if (tcpClients[i] && tcpClients[i].connected() && tcpClients[i].available()) {
-        available = true;
+        available = 1;
         break;
       }
     }
 
     if (socketTypes[i] == UDP_MODE && (udps[i].available() || udps[i].parsePacket())) {
-      available = true;
+      available = 1;
       break;
     }
 
-    if (socketTypes[i] == TLS_MODE && tlsClients[i] && tlsClients[i].connected() && tlsClients[i].available()) {
-      available = true;
+    if (socketTypes[i] == TLS_MODE && tlsClients[i].connected() && tlsClients[i].available()) {
+      available = 1;
       break;
     }
 
@@ -2531,7 +2530,9 @@ void CommandHandlerClass::onWiFiReceive()
 void CommandHandlerClass::handleWiFiReceive()
 {
   if (xPortInIsrContext()) {
-    xSemaphoreGiveFromISR(_updateGpio0PinSemaphore, NULL);
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    xSemaphoreGiveFromISR(_updateGpio0PinSemaphore, &xHigherPriorityTaskWoken);
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
   } else {
     xSemaphoreGive(_updateGpio0PinSemaphore);
   }
