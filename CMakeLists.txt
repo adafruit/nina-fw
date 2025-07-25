@@ -10,12 +10,6 @@ else ()
   message(FATAL_ERROR "Unsupported BOARD: ${BOARD}. Supported boards are: fruitjam_c6, esp32")
 endif ()
 
-# caused by esp-idf/components/bt/controller/esp32c6/bt.c:253:11: In function 'esp_bt_controller_log_init':
-# error: 'task_create' may be used uninitialized [-Werror=maybe-uninitialized]
-if (IDF_TARGET STREQUAL "esp32c6")
-  add_compile_options(-Wno-maybe-uninitialized)
-endif ()
-
 set(SDKCONFIG ${CMAKE_BINARY_DIR}/sdkconfig)
 set(SDKCONFIG_DEFAULTS sdkconfig.defaults ${CMAKE_CURRENT_LIST_DIR}/boards/${BOARD}/sdkconfig)
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
@@ -33,6 +27,9 @@ add_compile_definitions(
   BOARD_${BOARD_UPPER}
   )
 set(EXTRA_COMPONENT_DIRS ${CMAKE_CURRENT_LIST_DIR}/boards)
+
+# required when upgrading to esp-idf v5.5 and arduino-esp32 v3.3.0
+add_link_options("-Wl,-u,__wrap_esp_log_writev")
 
 project(nina-fw)
 
