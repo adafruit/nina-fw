@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  IDF_VERSION: v5.3.2
+  IDF_VERSION: v5.5
 
 jobs:
   build:
