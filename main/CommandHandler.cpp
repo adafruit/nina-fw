@@ -63,7 +63,7 @@ int errno;
 
 // Note: following version definition line is parsed by python script. Please don't change its format (space, indent) only update its version number.
 // ADAFRUIT-CHANGE: not fixed length
-// The version number obeys semver rules. We suffix with "+adafruit" to distinguish from Arduino NINA-FW.
+// The version number obeys semver rules. We suffix with "+adafruit" to distinguish from Arduino NINA-FW.
 const char FIRMWARE_VERSION[] = "3.0.0";
 
 // ADAFRUIT-CHANGE: user-supplied cert and key
@@ -81,6 +81,7 @@ uint32_t resolvedHostname;
 #define MAX_SOCKETS CONFIG_LWIP_MAX_SOCKETS
 
 uint8_t socketTypes[MAX_SOCKETS];
+SemaphoreHandle_t socketMutex[MAX_SOCKETS];
 NetworkClient tcpClients[MAX_SOCKETS];
 NetworkUDP udps[MAX_SOCKETS];
 NetworkServer tcpServers[MAX_SOCKETS];
@@ -668,6 +669,7 @@ int startServerTcp(const uint8_t command[], uint8_t response[])
 int getStateTcp(const uint8_t command[], uint8_t response[])
 {
   uint8_t socket = command[4];
+  xSemaphoreTake(socketMutex[socket], portMAX_DELAY);
 
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length
@@ -677,6 +679,8 @@ int getStateTcp(const uint8_t command[], uint8_t response[])
   } else {
     response[4] = 0;
   }
+
+  xSemaphoreGive(socketMutex[socket]);
 
   return 6;
 }
@@ -696,6 +700,8 @@ int availDataTcp(const uint8_t command[], uint8_t response[])
 {
   uint8_t socket = command[4];
   uint16_t available = 0;
+
+  xSemaphoreTake(socketMutex[socket], portMAX_DELAY);
 
   if (socketTypes[socket] == TCP_MODE) {
     if (tcpServers[socket]) {
@@ -763,6 +769,8 @@ int availDataTcp(const uint8_t command[], uint8_t response[])
 
   memcpy(&response[4], &available, sizeof(available));
 
+  xSemaphoreGive(socketMutex[socket]);
+
   return 7;
 }
 
@@ -770,6 +778,8 @@ int getDataTcp(const uint8_t command[], uint8_t response[])
 {
   uint8_t socket = command[4];
   uint8_t peek = command[6];
+
+  xSemaphoreTake(socketMutex[socket], portMAX_DELAY);
 
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length
@@ -793,6 +803,8 @@ int getDataTcp(const uint8_t command[], uint8_t response[])
       response[4] = tlsClients[socket].read();
     }
   }
+
+  xSemaphoreGive(socketMutex[socket]);
 
   return 6;
 }
@@ -823,6 +835,8 @@ int startClientTcp(const uint8_t command[], uint8_t response[])
     type = command[15 + command[3]];
   }
 
+  xSemaphoreTake(socketMutex[socket], portMAX_DELAY);
+
   if (type == TCP_MODE) {
     int result;
 
@@ -831,6 +845,8 @@ int startClientTcp(const uint8_t command[], uint8_t response[])
     } else {
       result = tcpClients[socket].connect(ip, port);
     }
+
+    xSemaphoreGive(socketMutex[socket]);
 
     if (result) {
       socketTypes[socket] = TCP_MODE;
@@ -853,6 +869,8 @@ int startClientTcp(const uint8_t command[], uint8_t response[])
     } else {
       result = udps[socket].beginPacket(ip, port);
     }
+
+    xSemaphoreGive(socketMutex[socket]);
 
     if (result == 1) {
       socketTypes[socket] = UDP_MODE;
@@ -884,6 +902,8 @@ int startClientTcp(const uint8_t command[], uint8_t response[])
       result = tlsClients[socket].connect(ip, port);
     }
 
+    xSemaphoreGive(socketMutex[socket]);
+
     if (result) {
       socketTypes[socket] = TLS_MODE;
 
@@ -907,6 +927,7 @@ int startClientTcp(const uint8_t command[], uint8_t response[])
 int stopClientTcp(const uint8_t command[], uint8_t response[])
 {
   uint8_t socket = command[4];
+  xSemaphoreTake(socketMutex[socket], portMAX_DELAY);
 
   if (socketTypes[socket] == TCP_MODE) {
     tcpClients[socket].stop();
@@ -916,6 +937,8 @@ int stopClientTcp(const uint8_t command[], uint8_t response[])
     tlsClients[socket].stop();
   }
   socketTypes[socket] = NO_MODE;
+
+  xSemaphoreGive(socketMutex[socket]);
 
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length
@@ -927,6 +950,7 @@ int stopClientTcp(const uint8_t command[], uint8_t response[])
 int getClientStateTcp(const uint8_t command[], uint8_t response[])
 {
   uint8_t socket = command[4];
+  xSemaphoreTake(socketMutex[socket], portMAX_DELAY);
 
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length
@@ -939,6 +963,8 @@ int getClientStateTcp(const uint8_t command[], uint8_t response[])
     socketTypes[socket] = NO_MODE;
     response[4] = 0;
   }
+
+  xSemaphoreGive(socketMutex[socket]);
 
   return 6;
 }
@@ -1032,6 +1058,7 @@ int getFwVersion(const uint8_t command[], uint8_t response[])
 int sendUDPdata(const uint8_t command[], uint8_t response[])
 {
   uint8_t socket = command[4];
+  xSemaphoreTake(socketMutex[socket], portMAX_DELAY);
 
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length
@@ -1042,12 +1069,15 @@ int sendUDPdata(const uint8_t command[], uint8_t response[])
     response[4] = 0;
   }
 
+  xSemaphoreGive(socketMutex[socket]);
+
   return 6;
 }
 
 int getRemoteData(const uint8_t command[], uint8_t response[])
 {
   uint8_t socket = command[4];
+  xSemaphoreTake(socketMutex[socket], portMAX_DELAY);
 
   /*IPAddress*/uint32_t ip = /*IPAddress(0, 0, 0, 0)*/0;
   uint16_t port = 0;
@@ -1062,6 +1092,8 @@ int getRemoteData(const uint8_t command[], uint8_t response[])
     ip = tlsClients[socket].remoteIP();
     port = tlsClients[socket].remotePort();
   }
+
+  xSemaphoreGive(socketMutex[socket]);
 
   response[2] = 2; // number of parameters
 
@@ -2420,6 +2452,43 @@ const CommandHandlerType commandHandlers[] = {
 };
 #define NUM_COMMAND_HANDLERS (sizeof(commandHandlers) / sizeof(commandHandlers[0]))
 
+#if defined(CMAKE_BUILD_TYPE_DEBUG) && 0
+const char* commandStrings[] = {
+  // 0x00 -> 0x0f
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+  // 0x10 -> 0x1f
+  "setNet", "setPassPhrase", "setKey", NULL, "setIPconfig", "setDNSconfig", "setHostname", "setPowerMode", "setApNet", "setApPassPhrase", "setDebug", "getTemperature", NULL, NULL, "getDNSconfig", "getReasonCode",
+  // 0x20 -> 0x2f
+  "getConnStatus", "getIPaddr", "getMACaddr", "getCurrSSID", "getCurrBSSID", "getCurrRSSI", "getCurrEnct", "scanNetworks", "startServerTcp", "getStateTcp", "dataSentTcp", "availDataTcp", "getDataTcp", "startClientTcp", "stopClientTcp", "getClientStateTcp",
+  // 0x30 -> 0x3f
+  "disconnect", NULL, "getIdxRSSI", "getIdxEnct", "reqHostByName", "getHostByName", "startScanNetworks", "getFwVersion", NULL, "sendUDPdata", "getRemoteData", "getTime", "getIdxBSSID", "getIdxChannel", "ping", "getSocket",
+  // 0x40 -> 0x4f
+  "setClientCert", "setCertKey", NULL, NULL, "sendDataTcp", "getDataBufTcp", "insertDataBuf", NULL, NULL, NULL, "wpa2EntSetIdentity", "wpa2EntSetUsername", "wpa2EntSetPassword", "wpa2EntSetCACert", "wpa2EntSetCertKey", "wpa2EntEnable",
+  // 0x50 -> 0x5f
+  "setPinMode", "setDigitalWrite", "setAnalogWrite", "getDigitalRead", "getAnalogRead", NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+  // 0x60 -> 0x6f
+  "writeFile", "readFile", "deleteFile", "existsFile", "downloadFile", "applyOTA", "renameFile", "downloadOTA", NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+  // Low-level BSD-like sockets functions.
+  // 0x70 -> 0x7f
+  "socket_socket",
+  "socket_close",
+  "socket_errno",
+  "socket_bind",
+  "socket_listen",
+  "socket_accept",
+  "socket_connect",
+  "socket_send",
+  "socket_recv",
+  "socket_sendto",
+  "socket_recvfrom",
+  "socket_ioctl",
+  "socket_poll",
+  "socket_setsockopt",
+  "socket_getsockopt",
+  "socket_getpeername"
+};
+#endif
+
 CommandHandlerClass::CommandHandlerClass()
 {
 }
@@ -2436,12 +2505,13 @@ void CommandHandlerClass::begin()
 
   for (int i = 0; i < MAX_SOCKETS; i++) {
     socketTypes[i] = NO_MODE;
+    socketMutex[i] = xSemaphoreCreateMutex();
   }
 
   _updateGpio0PinSemaphore = xSemaphoreCreateCounting(2, 0);
 
   // change priority to higher than loop task() to prevent socket connected() and available() race condition
-  xTaskCreatePinnedToCore(CommandHandlerClass::gpio0Updater, "gpio0Updater", 8192, NULL, 2, NULL,
+  xTaskCreatePinnedToCore(CommandHandlerClass::gpio0Updater, "gpio0Updater", 8192, NULL, 1, NULL,
     CONFIG_FREERTOS_NUMBER_OF_CORES-1);
 }
 
@@ -2453,6 +2523,13 @@ int CommandHandlerClass::handle(const uint8_t command[], uint8_t response[])
   int responseLength = 0;
 
   if (command[0] == START_CMD && command[1] < NUM_COMMAND_HANDLERS) {
+    #if defined(CMAKE_BUILD_TYPE_DEBUG) && 0
+    const char* cmdStr = (command[1] < sizeof(commandStrings) / sizeof(commandStrings[0])) ? commandStrings[command[1]] : NULL;
+    if (cmdStr) {
+      ets_printf("Command %u: %s\r\n", command[1], cmdStr);
+    }
+    #endif
+
     CommandHandlerType commandHandlerType = commandHandlers[command[1]];
 
     if (commandHandlerType) {
@@ -2489,8 +2566,12 @@ void CommandHandlerClass::updateGpio0Pin()
   xSemaphoreTake(_updateGpio0PinSemaphore, portMAX_DELAY);
 
   int available = 0;
+  int i;
+  for (i = 0; i < MAX_SOCKETS; i++) {
+    if (pdFALSE == xSemaphoreTake(socketMutex[i], 0)) {
+      continue; // skip if mutex is not available
+    }
 
-  for (int i = 0; i < MAX_SOCKETS; i++) {
     if (socketTypes[i] == TCP_MODE) {
       if (tcpServers[i] && (tcpServers[i].hasClient() || tcpServers[i].accept())) {
         available = 1;
@@ -2511,15 +2592,17 @@ void CommandHandlerClass::updateGpio0Pin()
       break;
     }
 
+    xSemaphoreGive(socketMutex[i]);
   }
 
   if (available) {
+    xSemaphoreGive(socketMutex[i]); // break early, not giving back semaphore yet
     digitalWrite(GPIO_IRQ, HIGH);
   } else {
     digitalWrite(GPIO_IRQ, LOW);
   }
 
-  vTaskDelay(1);
+  // vTaskDelay(1);
 }
 
 void CommandHandlerClass::onWiFiReceive()
