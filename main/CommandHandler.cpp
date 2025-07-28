@@ -64,7 +64,7 @@ int errno;
 // Note: following version definition line is parsed by python script. Please don't change its format (space, indent) only update its version number.
 // ADAFRUIT-CHANGE: not fixed length
 // The version number obeys semver rules. We suffix with "+adafruit" to distinguish from Arduino NINA-FW.
-const char FIRMWARE_VERSION[] = "3.0.0";
+const char FIRMWARE_VERSION[] = "3.1.0";
 
 // ADAFRUIT-CHANGE: user-supplied cert and key
 // Optional, user-defined X.509 certificate
@@ -960,7 +960,10 @@ int getClientStateTcp(const uint8_t command[], uint8_t response[])
   } else if ((socketTypes[socket] == TLS_MODE) && tlsClients[socket].connected()) {
     response[4] = 4;
   } else {
-    socketTypes[socket] = NO_MODE;
+    // ADAFRUIT: Original code reset socket type probably to clean up socket that was closed by remote host (once connected)
+    // However if application tries to query socket state while TLS socket is in middle of handshaking (may take a while),
+    // it can reset socket and cause esp32 report as closed/non-available connection.
+    // socketTypes[socket] = NO_MODE;
     response[4] = 0;
   }
 
