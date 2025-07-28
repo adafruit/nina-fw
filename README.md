@@ -27,7 +27,7 @@ original Arduino firmware repository.
 
 1. [Download the ESP32 toolchain](https://docs.espressif.com/projects/esp-idf/en/v3.3.1/get-started/index.html#setup-toolchain)
 1. Extract it and add it to your `PATH`: `export PATH=$PATH:<path/to/toolchain>/bin`
-1. Clone **v3.3.1** of the IDF: `git clone --branch v3.3.1 --recursive https://github.com/espressif/esp-idf.git`
+1. Clone **v5.5** of the IDF: `git clone --branch v5.5 --recursive https://github.com/espressif/esp-idf.git`
 1. Set the `IDF_PATH` environment variable: `export IDF_PATH=<path/to/idf>`
 1. `git submodule update --init` to fetch the `certificates` submodule.
 1. Run `make firmware` to build the firmware (in the directory of this read me)
