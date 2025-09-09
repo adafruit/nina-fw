@@ -64,7 +64,7 @@ int errno;
 // Note: following version definition line is parsed by python script. Please don't change its format (space, indent) only update its version number.
 // ADAFRUIT-CHANGE: not fixed length
 // The version number obeys semver rules. We suffix with "+adafruit" to distinguish from Arduino NINA-FW.
-const char FIRMWARE_VERSION[] = "3.1.0";
+const char FIRMWARE_VERSION[] = "3.2.0";
 
 // ADAFRUIT-CHANGE: user-supplied cert and key
 // Optional, user-defined X.509 certificate
@@ -1285,6 +1285,8 @@ int sendDataTcp(const uint8_t command[], uint8_t response[])
   memcpy(&length, &command[6], sizeof(length));
   length = ntohs(length);
 
+  xSemaphoreTake(socketMutex[socket], portMAX_DELAY);
+
   if ((socketTypes[socket] == TCP_MODE) && tcpServers[socket]) {
     // Client corresponding to the server.
     written = tcpClients[socket].write(&command[8], length);
@@ -1293,6 +1295,8 @@ int sendDataTcp(const uint8_t command[], uint8_t response[])
   } else if (socketTypes[socket] == TLS_MODE) {
     written = tlsClients[socket].write(&command[8], length);
   }
+
+  xSemaphoreGive(socketMutex[socket]);
 
   response[2] = 1; // number of parameters
   response[3] = sizeof(written); // parameter 1 length
@@ -1310,6 +1314,8 @@ int getDataBufTcp(const uint8_t command[], uint8_t response[])
   socket = command[5];
   memcpy(&length, &command[8], sizeof(length));
 
+  xSemaphoreTake(socketMutex[socket], portMAX_DELAY);
+
   if (socketTypes[socket] == TCP_MODE) {
     read = tcpClients[socket].read(&response[5], length);
   } else if (socketTypes[socket] == UDP_MODE) {
@@ -1317,6 +1323,8 @@ int getDataBufTcp(const uint8_t command[], uint8_t response[])
   } else if (socketTypes[socket] == TLS_MODE) {
     read = tlsClients[socket].read(&response[5], length);
   }
+
+  xSemaphoreGive(socketMutex[socket]);
 
   if (read < 0) {
     read = 0;
@@ -1341,11 +1349,15 @@ int insertDataBuf(const uint8_t command[], uint8_t response[])
   response[2] = 1; // number of parameters
   response[3] = 1; // parameter 1 length
 
+  xSemaphoreTake(socketMutex[socket], portMAX_DELAY);
+
   if (udps[socket].write(&command[8], length) != 0) {
     response[4] = 1;
   } else {
     response[4] = 0;
   }
+
+  xSemaphoreGive(socketMutex[socket]);
 
   return 6;
 }
