@@ -30,7 +30,8 @@ original Arduino firmware repository.
 1. Clone **v5.5** of the IDF: `git clone --branch v5.5 --recursive https://github.com/espressif/esp-idf.git`
 1. Set the `IDF_PATH` environment variable: `export IDF_PATH=<path/to/idf>`
 1. `git submodule update --init` to fetch the `certificates` submodule.
-1. Run `make firmware` to build the firmware (in the directory of this read me)
+1. Run `idf.py -DBOARD=your-board build` to build the firmware (in the directory of this readme).
+Where `your-board` can be found in boards/ folder, e.g. `esp32` or `fruitjam_c6`
 1. You may need to set up a python3 `venv` to avoid Python library version issues.
 1. You should have a file named `NINA_W102-x.x.x.bin` in the top directory
 1. Use appropriate tools (`esptool.py`, appropriate pass-through firmware etc)
