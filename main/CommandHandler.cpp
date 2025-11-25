@@ -81,6 +81,9 @@ uint32_t resolvedHostname;
 #define MAX_SOCKETS CONFIG_LWIP_MAX_SOCKETS
 
 uint8_t socketTypes[MAX_SOCKETS];
+// Tracks whether this slot has ever successfully completed a TCP/TLS connect().
+bool socketWasConnected[MAX_SOCKETS];
+
 SemaphoreHandle_t socketMutex[MAX_SOCKETS];
 NetworkClient tcpClients[MAX_SOCKETS];
 NetworkUDP udps[MAX_SOCKETS];
@@ -850,6 +853,7 @@ int startClientTcp(const uint8_t command[], uint8_t response[])
 
     if (result) {
       socketTypes[socket] = TCP_MODE;
+      socketWasConnected[socket] = true;
 
       response[2] = 1; // number of parameters
       response[3] = 1; // parameter 1 length
@@ -906,6 +910,7 @@ int startClientTcp(const uint8_t command[], uint8_t response[])
 
     if (result) {
       socketTypes[socket] = TLS_MODE;
+      socketWasConnected[socket] = true;
 
       response[2] = 1; // number of parameters
       response[3] = 1; // parameter 1 length
@@ -937,6 +942,7 @@ int stopClientTcp(const uint8_t command[], uint8_t response[])
     tlsClients[socket].stop();
   }
   socketTypes[socket] = NO_MODE;
+  socketWasConnected[socket] = false;
 
   xSemaphoreGive(socketMutex[socket]);
 
@@ -960,10 +966,13 @@ int getClientStateTcp(const uint8_t command[], uint8_t response[])
   } else if ((socketTypes[socket] == TLS_MODE) && tlsClients[socket].connected()) {
     response[4] = 4;
   } else {
-    // ADAFRUIT: Original code reset socket type probably to clean up socket that was closed by remote host (once connected)
-    // However if application tries to query socket state while TLS socket is in middle of handshaking (may take a while),
-    // it can reset socket and cause esp32 report as closed/non-available connection.
-    // socketTypes[socket] = NO_MODE;
+    // Connection is no longer alive.
+    // If this socket was successfully connected at least once,
+    // free the firmware-side slot so new connections don't run out of sockets.
+    if (socketWasConnected[socket]) {
+      socketTypes[socket] = NO_MODE;
+      socketWasConnected[socket] = false;
+    }
     response[4] = 0;
   }
 
@@ -1387,6 +1396,7 @@ int getSocket(const uint8_t command[], uint8_t response[])
   for (int i = 0; i < MAX_SOCKETS; i++) {
     if (socketTypes[i] == NO_MODE) {
       result = i;
+      socketWasConnected[i] = false;
       break;
     }
   }
@@ -2520,6 +2530,7 @@ void CommandHandlerClass::begin()
 
   for (int i = 0; i < MAX_SOCKETS; i++) {
     socketTypes[i] = NO_MODE;
+    socketWasConnected[i] = false;
     socketMutex[i] = xSemaphoreCreateMutex();
   }
 
